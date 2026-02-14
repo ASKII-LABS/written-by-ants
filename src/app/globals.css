@@ -40,12 +40,12 @@ body {
 }
 
 .prose-poem {
-  line-height: 1.8;
+  line-height: 1.4;
   font-size: 1.07rem;
 }
 
 .prose-poem p {
-  margin-bottom: 0.95rem;
+  margin-bottom: 0.35rem;
 }
 
 .prose-poem p:last-child {

@@ -1,8 +1,9 @@
 import Link from "next/link";
 
 import { toggleLikeAction } from "@/app/actions";
+import { sanitizePoemHtml } from "@/lib/sanitize";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate, poemSnippet } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,7 @@ export default async function HomePage() {
           const likeCount = likeCountByPoem.get(poem.id) ?? 0;
           const liked = likedByUser.has(poem.id);
           const authorName = authorMap.get(poem.author_id) ?? "Unknown Poet";
+          const safeHtml = sanitizePoemHtml(poem.content_html);
 
           return (
             <article key={poem.id} className="rounded border border-ant-border bg-ant-paper-2 p-5">
@@ -94,7 +96,10 @@ export default async function HomePage() {
                 by {authorName} on {formatDate(poem.created_at)}
               </p>
 
-              <p className="mt-3 text-ant-ink/90">{poemSnippet(poem.content_html)}</p>
+              <section
+                className="prose-poem mt-3 text-ant-ink/90"
+                dangerouslySetInnerHTML={{ __html: safeHtml }}
+              />
 
               <div className="mt-4 flex items-center gap-3 text-sm">
                 {user ? (
