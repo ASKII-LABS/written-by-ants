@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+:root {
+  --ant-primary: #cf4f49;
+  --ant-accent: #da645e;
+  --ant-muted-accent: #cc8e84;
+  --ant-paper: #e5dfcf;
+  --ant-paper-2: #ddd6c4;
+  --ant-border: #bcb5a6;
+  --ant-ink: #2f2a23;
+}
+
+@theme inline {
+  --font-sans: var(--font-body);
+  --font-serif: var(--font-heading);
+  --color-ant-primary: var(--ant-primary);
+  --color-ant-accent: var(--ant-accent);
+  --color-ant-muted: var(--ant-muted-accent);
+  --color-ant-paper: var(--ant-paper);
+  --color-ant-paper-2: var(--ant-paper-2);
+  --color-ant-border: var(--ant-border);
+  --color-ant-ink: var(--ant-ink);
+}
+
+* {
+  border-color: var(--ant-border);
+}
+
+body {
+  background: var(--ant-paper);
+  color: var(--ant-ink);
+  font-family: var(--font-body), sans-serif;
+}
+
+.bg-paper-grain {
+  background-image:
+    radial-gradient(circle at 12% 16%, rgb(218 100 94 / 0.1) 0, transparent 36%),
+    radial-gradient(circle at 86% 14%, rgb(204 142 132 / 0.08) 0, transparent 30%),
+    linear-gradient(180deg, var(--ant-paper) 0%, var(--ant-paper-2) 100%);
+}
+
+.prose-poem {
+  line-height: 1.8;
+  font-size: 1.07rem;
+}
+
+.prose-poem p {
+  margin-bottom: 0.95rem;
+}
+
+.prose-poem p:last-child {
+  margin-bottom: 0;
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  color: rgb(47 42 35 / 0.45);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.tiptap:focus-visible {
+  border-color: var(--ant-primary);
+}
+
+.tiptap p {
+  margin-bottom: 0.9rem;
+}
+
+.tiptap p:last-child {
+  margin-bottom: 0;
+}
