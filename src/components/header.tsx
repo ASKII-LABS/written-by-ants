@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { HeaderUserMenu } from "@/components/header-user-menu";
+import { HeaderSearch } from "@/components/header-search";
 import { createClient } from "@/lib/supabase/server";
 
 export async function Header() {
@@ -22,7 +23,7 @@ export async function Header() {
   }
 
   return (
-    <header className="sticky top-0 z-40 mb-6 border-b border-ant-border bg-ant-paper-2/90 px-4 py-4 backdrop-blur">
+    <header className="relative sticky top-0 z-40 mb-6 border-b border-ant-border bg-ant-paper-2/90 px-4 py-4 backdrop-blur">
       <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4">
         <Link
           href="/"
@@ -32,6 +33,8 @@ export async function Header() {
         </Link>
 
         <nav className="flex items-center gap-3 overflow-visible text-sm text-ant-ink">
+          <HeaderSearch />
+
           {user ? (
             <>
               <Link href="/write" className="text-ant-primary transition hover:text-ant-accent">
