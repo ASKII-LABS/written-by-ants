@@ -4,7 +4,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import TextAlign from "@tiptap/extension-text-align";
 import Underline from "@tiptap/extension-underline";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 type ExistingPoem = {
   id: string;
@@ -20,25 +20,68 @@ type PoemEditorProps = {
 };
 
 type ToolbarButtonProps = {
-  label: string;
+  ariaLabel: string;
+  children: ReactNode;
   isActive?: boolean;
   onClick: () => void;
   disabled?: boolean;
 };
 
-function ToolbarButton({ label, isActive = false, onClick, disabled = false }: ToolbarButtonProps) {
+function IconAlignLeft() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+      <path d="M4 7h14M4 12h10M4 17h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconAlignCenter() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+      <path
+        d="M5 7h14M7 12h10M5 17h14"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconAlignRight() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+      <path
+        d="M6 7h14M10 12h10M6 17h14"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ToolbarButton({
+  ariaLabel,
+  children,
+  isActive = false,
+  onClick,
+  disabled = false,
+}: ToolbarButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`cursor-pointer rounded border px-2 py-1 text-sm transition ${
+      aria-label={ariaLabel}
+      title={ariaLabel}
+      className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded border text-sm transition ${
         isActive
           ? "border-ant-primary bg-ant-primary text-ant-paper"
           : "border-ant-border bg-ant-paper text-ant-ink hover:border-ant-primary hover:text-ant-primary"
       } disabled:cursor-not-allowed disabled:opacity-60`}
     >
-      {label}
+      {children}
     </button>
   );
 }
@@ -99,41 +142,53 @@ export function PoemEditor({ poem, savePoemAction, deletePoemAction }: PoemEdito
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <ToolbarButton
-              label="[B]"
+              ariaLabel="Bold"
               isActive={editor?.isActive("bold")}
               onClick={() => editor?.chain().focus().toggleBold().run()}
               disabled={!editor?.can().chain().focus().toggleBold().run()}
-            />
+            >
+              <span className="text-base font-bold leading-none">B</span>
+            </ToolbarButton>
             <ToolbarButton
-              label="[I]"
+              ariaLabel="Italic"
               isActive={editor?.isActive("italic")}
               onClick={() => editor?.chain().focus().toggleItalic().run()}
               disabled={!editor?.can().chain().focus().toggleItalic().run()}
-            />
+            >
+              <span className="text-base italic leading-none">I</span>
+            </ToolbarButton>
             <ToolbarButton
-              label="[U]"
+              ariaLabel="Underline"
               isActive={editor?.isActive("underline")}
               onClick={() => editor?.chain().focus().toggleUnderline().run()}
               disabled={!editor?.can().chain().focus().toggleUnderline().run()}
-            />
+            >
+              <span className="text-base underline leading-none">U</span>
+            </ToolbarButton>
             <ToolbarButton
-              label="[Left]"
+              ariaLabel="Align left"
               isActive={editor?.isActive({ textAlign: "left" })}
               onClick={() => editor?.chain().focus().setTextAlign("left").run()}
               disabled={!editor?.can().chain().focus().setTextAlign("left").run()}
-            />
+            >
+              <IconAlignLeft />
+            </ToolbarButton>
             <ToolbarButton
-              label="[Center]"
+              ariaLabel="Align center"
               isActive={editor?.isActive({ textAlign: "center" })}
               onClick={() => editor?.chain().focus().setTextAlign("center").run()}
               disabled={!editor?.can().chain().focus().setTextAlign("center").run()}
-            />
+            >
+              <IconAlignCenter />
+            </ToolbarButton>
             <ToolbarButton
-              label="[Right]"
+              ariaLabel="Align right"
               isActive={editor?.isActive({ textAlign: "right" })}
               onClick={() => editor?.chain().focus().setTextAlign("right").run()}
               disabled={!editor?.can().chain().focus().setTextAlign("right").run()}
-            />
+            >
+              <IconAlignRight />
+            </ToolbarButton>
           </div>
           <EditorContent editor={editor} />
           <input type="hidden" name="content_html" value={contentHtml} />

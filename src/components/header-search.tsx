@@ -89,7 +89,7 @@ export function HeaderSearch() {
       </button>
 
       <div
-        className={`absolute inset-x-0 top-full z-30 overflow-hidden bg-ant-paper-2/70 px-4 transition-all duration-200 ease-out sm:hidden ${
+        className={`absolute inset-x-0 top-full z-30 overflow-hidden bg-ant-paper-2/90 backdrop-blur-md px-4 transition-all duration-200 ease-out sm:hidden ${
           isMobileOpen
             ? "max-h-24 translate-y-0 border-b border-ant-border py-2 opacity-100"
             : "pointer-events-none max-h-0 -translate-y-1 border-b-0 py-0 opacity-0"
