@@ -7,7 +7,6 @@ export const dynamic = "force-dynamic";
 
 type SettingsPageProps = {
   searchParams: Promise<{
-    saved?: string;
     error?: string;
   }>;
 };
@@ -63,8 +62,9 @@ async function updateSettingsAction(formData: FormData) {
   revalidatePath("/", "layout");
   revalidatePath("/");
   revalidatePath("/profile");
+  revalidatePath(`/poet/${user.id}`);
   revalidatePath("/settings");
-  redirect("/settings?saved=1");
+  redirect("/profile");
 }
 
 export default async function SettingsPage({ searchParams }: SettingsPageProps) {
@@ -87,8 +87,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
     redirect("/onboarding");
   }
 
-  const { saved, error } = await searchParams;
-  const showSaved = saved === "1";
+  const { error } = await searchParams;
   const errorMessage = getErrorMessage(error);
 
   return (
@@ -100,7 +99,6 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
 
       <div className="rounded border border-ant-border bg-ant-paper-2 p-5">
         <h2 className="font-serif text-2xl text-ant-primary">Profile settings</h2>
-        {showSaved ? <p className="mt-2 text-sm text-ant-primary">Settings updated.</p> : null}
         {errorMessage ? <p className="mt-2 text-sm text-ant-primary">{errorMessage}</p> : null}
 
         <form action={updateSettingsAction} className="mt-4 space-y-4">
@@ -156,7 +154,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
             type="submit"
             className="cursor-pointer rounded border border-ant-primary bg-ant-primary px-4 py-2 font-medium text-ant-paper transition hover:bg-ant-accent"
           >
-            Save settings
+            Save changes
           </button>
         </form>
       </div>

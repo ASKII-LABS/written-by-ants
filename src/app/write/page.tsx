@@ -130,10 +130,13 @@ async function savePoemAction(formData: FormData) {
   revalidatePath("/profile");
   if (savedId) {
     revalidatePath(`/poem/${savedId}`);
-    redirect(`/write?id=${savedId}`);
   }
 
-  redirect("/write");
+  if (intent === "publish") {
+    redirect("/");
+  }
+
+  redirect("/profile?tab=drafts");
 }
 
 async function deletePoemAction(formData: FormData) {

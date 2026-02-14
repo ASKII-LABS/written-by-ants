@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { notFound, redirect } from "next/navigation";
 
 import { toggleLikeAction } from "@/app/actions";
+import { DeletePoemForm } from "@/components/delete-poem-form";
 import { sanitizePoemHtml } from "@/lib/sanitize";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
@@ -49,6 +51,36 @@ export default async function PoemPage({ params }: PoemPageProps) {
     notFound();
   }
 
+  async function deletePoemAction(formData: FormData) {
+    "use server";
+
+    const poemId = String(formData.get("poem_id") ?? "").trim();
+    if (!poemId) {
+      redirect("/profile");
+    }
+
+    const actionSupabase = await createClient();
+    const {
+      data: { user: actionUser },
+    } = await actionSupabase.auth.getUser();
+
+    if (!actionUser) {
+      redirect("/login");
+    }
+
+    await actionSupabase
+      .from("poems")
+      .delete()
+      .eq("id", poemId)
+      .eq("author_id", actionUser.id);
+
+    revalidatePath("/");
+    revalidatePath("/profile");
+    revalidatePath(`/poem/${poemId}`);
+    revalidatePath(`/poet/${actionUser.id}`);
+    redirect("/profile");
+  }
+
   const { data: authorProfile } = await supabase
     .from("profiles")
     .select("display_name")
@@ -89,6 +121,11 @@ export default async function PoemPage({ params }: PoemPageProps) {
             >
               Edit
             </Link>
+            <DeletePoemForm
+              poemId={typedPoem.id}
+              deletePoemAction={deletePoemAction}
+              className="cursor-pointer rounded border border-ant-border px-2 py-1 text-ant-primary transition hover:border-ant-primary hover:bg-ant-primary hover:text-ant-paper"
+            />
           </div>
         ) : null}
       </header>

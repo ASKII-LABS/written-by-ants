@@ -66,7 +66,7 @@ export default async function PoetPage({ params }: PoetPageProps) {
       </div>
 
       <div className="rounded border border-ant-border bg-ant-paper-2 p-5">
-        <h2 className="font-serif text-2xl text-ant-primary">Published poems</h2>
+        <h2 className="font-serif text-2xl text-ant-primary">Poems</h2>
 
         {publishedPoems.length === 0 ? (
           <p className="mt-4 text-sm text-ant-ink/70">No published poems yet.</p>
@@ -82,7 +82,7 @@ export default async function PoetPage({ params }: PoetPageProps) {
                       {poem.title}
                     </Link>
                   </h3>
-                  <p className="mt-1 text-xs text-ant-ink/70">Published {formatDate(poem.created_at)}</p>
+                  <p className="mt-1 text-xs text-ant-ink/70">Published on {formatDate(poem.created_at)}</p>
 
                   <section
                     className="prose-poem mt-3 text-ant-ink/90"

@@ -47,6 +47,8 @@ export function PoemEditor({ poem, savePoemAction, deletePoemAction }: PoemEdito
   const initialContent = poem?.content_html ?? "<p></p>";
   const [title, setTitle] = useState(poem?.title ?? "");
   const [contentHtml, setContentHtml] = useState(initialContent);
+  const draftIntent = poem?.is_published ? "unpublish" : "save_draft";
+  const draftLabel = poem?.is_published ? "Unpublish (Save Draft)" : "Save Draft";
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -141,24 +143,31 @@ export function PoemEditor({ poem, savePoemAction, deletePoemAction }: PoemEdito
           <button
             type="submit"
             name="intent"
-            value="save_draft"
+            value={draftIntent}
             className="cursor-pointer rounded border border-ant-border px-3 py-2 text-sm text-ant-ink transition hover:border-ant-primary hover:text-ant-primary"
           >
-            Save Draft
+            {draftLabel}
           </button>
           <button
             type="submit"
             name="intent"
-            value={poem?.is_published ? "unpublish" : "publish"}
+            value="publish"
             className="cursor-pointer rounded border border-ant-primary bg-ant-primary px-3 py-2 text-sm font-medium text-ant-paper transition hover:bg-ant-accent"
           >
-            {poem?.is_published ? "Unpublish" : "Publish"}
+            Publish
           </button>
         </div>
       </form>
 
       {poem?.id ? (
-        <form action={deletePoemAction}>
+        <form
+          action={deletePoemAction}
+          onSubmit={(event) => {
+            if (!confirm("Delete this poem? This action cannot be undone.")) {
+              event.preventDefault();
+            }
+          }}
+        >
           <input type="hidden" name="poem_id" value={poem.id} />
           <button
             type="submit"

@@ -16,10 +16,17 @@ type ProfilePoem = {
 type ProfilePoemTabsProps = {
   publishedPoems: ProfilePoem[];
   draftPoems: ProfilePoem[];
+  deletePoemAction: (formData: FormData) => Promise<void>;
+  initialTab?: "published" | "drafts";
 };
 
-export function ProfilePoemTabs({ publishedPoems, draftPoems }: ProfilePoemTabsProps) {
-  const [activeTab, setActiveTab] = useState<"published" | "drafts">("published");
+export function ProfilePoemTabs({
+  publishedPoems,
+  draftPoems,
+  deletePoemAction,
+  initialTab = "published",
+}: ProfilePoemTabsProps) {
+  const [activeTab, setActiveTab] = useState<"published" | "drafts">(initialTab);
   const visiblePoems = activeTab === "published" ? publishedPoems : draftPoems;
 
   return (
@@ -86,6 +93,22 @@ export function ProfilePoemTabs({ publishedPoems, draftPoems }: ProfilePoemTabsP
                 >
                   Edit
                 </Link>
+                <form
+                  action={deletePoemAction}
+                  onSubmit={(event) => {
+                    if (!confirm("Delete this poem? This action cannot be undone.")) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
+                  <input type="hidden" name="poem_id" value={poem.id} />
+                  <button
+                    type="submit"
+                    className="cursor-pointer rounded border border-ant-border px-2 py-1 text-ant-primary transition hover:border-ant-primary hover:bg-ant-primary hover:text-ant-paper"
+                  >
+                    Delete
+                  </button>
+                </form>
               </div>
             </article>
           ))}
