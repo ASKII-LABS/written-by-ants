@@ -22,7 +22,7 @@ export async function Header() {
   }
 
   return (
-    <header className="relative z-30 mb-6 border-b border-ant-border bg-ant-paper-2/90 px-4 py-4 backdrop-blur">
+    <header className="sticky top-0 z-40 mb-6 border-b border-ant-border bg-ant-paper-2/90 px-4 py-4 backdrop-blur">
       <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4">
         <Link
           href="/"

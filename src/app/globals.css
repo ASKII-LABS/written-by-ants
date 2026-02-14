@@ -40,7 +40,8 @@ body {
 }
 
 .prose-poem {
-  line-height: 1.4;
+  font-family: var(--font-heading), serif;
+  line-height: 1.15;
   font-size: 1.07rem;
 }
 

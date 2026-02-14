@@ -64,7 +64,7 @@ export function ProfilePoemTabs({ publishedPoems, draftPoems }: ProfilePoemTabsP
               </h3>
               <p className="mt-1 text-xs text-ant-ink/70">
                 {activeTab === "published"
-                  ? `Published ${formatDate(poem.created_at)}`
+                  ? `Published on ${formatDate(poem.created_at)}`
                   : `Updated ${formatDate(poem.updated_at)}`}
               </p>
 

@@ -83,6 +83,7 @@ export default async function HomePage() {
           const likeCount = likeCountByPoem.get(poem.id) ?? 0;
           const liked = likedByUser.has(poem.id);
           const authorName = authorMap.get(poem.author_id) ?? "Unknown Poet";
+          const authorHref = user?.id === poem.author_id ? "/profile" : `/poet/${poem.author_id}`;
           const safeHtml = sanitizePoemHtml(poem.content_html);
 
           return (
@@ -93,7 +94,11 @@ export default async function HomePage() {
                 </Link>
               </h2>
               <p className="mt-1 text-xs text-ant-ink/70">
-                by {authorName} on {formatDate(poem.created_at)}
+                by{" "}
+                <Link href={authorHref} className="text-ant-primary transition hover:underline">
+                  {authorName}
+                </Link>{" "}
+                on {formatDate(poem.created_at)}
               </p>
 
               <section
