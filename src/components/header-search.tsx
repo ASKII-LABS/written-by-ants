@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { createPortal } from "react-dom";
 
 function SearchIcon({ className }: { className?: string }) {
   return (
@@ -26,7 +27,9 @@ export function HeaderSearch() {
   const initialQuery = searchParams.get("q") ?? "";
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [mobileQuery, setMobileQuery] = useState(initialQuery);
+  const [mobilePanelTop, setMobilePanelTop] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const mobilePanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setMobileQuery(initialQuery);
@@ -38,7 +41,11 @@ export function HeaderSearch() {
     }
 
     function handleClickOutside(event: MouseEvent) {
-      if (!containerRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const clickedTrigger = containerRef.current?.contains(target);
+      const clickedPanel = mobilePanelRef.current?.contains(target);
+
+      if (!clickedTrigger && !clickedPanel) {
         setIsMobileOpen(false);
       }
     }
@@ -57,6 +64,56 @@ export function HeaderSearch() {
       document.removeEventListener("keydown", handleEscape);
     };
   }, [isMobileOpen]);
+
+  useEffect(() => {
+    if (!isMobileOpen) {
+      return;
+    }
+
+    function syncMobilePanelTop() {
+      const headerBottom = containerRef.current?.closest("header")?.getBoundingClientRect().bottom;
+      const triggerBottom = containerRef.current?.getBoundingClientRect().bottom;
+      setMobilePanelTop(headerBottom ?? triggerBottom ?? 0);
+    }
+
+    syncMobilePanelTop();
+
+    window.addEventListener("resize", syncMobilePanelTop);
+    window.addEventListener("scroll", syncMobilePanelTop, { passive: true });
+
+    return () => {
+      window.removeEventListener("resize", syncMobilePanelTop);
+      window.removeEventListener("scroll", syncMobilePanelTop);
+    };
+  }, [isMobileOpen]);
+
+  const mobileSearchPanel = (
+    <div
+      ref={mobilePanelRef}
+      style={{ top: mobilePanelTop }}
+      className={`fixed inset-x-0 z-30 overflow-hidden bg-ant-paper-2/90 backdrop-blur-md px-4 transition-all duration-200 ease-out sm:hidden ${
+        isMobileOpen
+          ? "max-h-24 translate-y-0 border-b border-ant-border py-2 opacity-100"
+          : "pointer-events-none max-h-0 -translate-y-1 border-b-0 py-0 opacity-0"
+      }`}
+    >
+      <form action="/search" className="relative" onSubmit={() => setIsMobileOpen(false)}>
+        <input
+          type="search"
+          name="q"
+          value={mobileQuery}
+          onChange={(event) => setMobileQuery(event.target.value)}
+          autoFocus={isMobileOpen}
+          placeholder="Search colony"
+          aria-label="Search colony"
+          className="w-full rounded border border-ant-border bg-ant-paper px-3 py-2 outline-none transition focus:border-ant-primary"
+        />
+        <button type="submit" className="sr-only">
+          Search
+        </button>
+      </form>
+    </div>
+  );
 
   return (
     <div ref={containerRef} className="sm:relative">
@@ -88,29 +145,7 @@ export function HeaderSearch() {
         <SearchIcon className="h-4 w-4" />
       </button>
 
-      <div
-        className={`absolute inset-x-0 top-full z-30 overflow-hidden bg-ant-paper-2/90 backdrop-blur-md px-4 transition-all duration-200 ease-out sm:hidden ${
-          isMobileOpen
-            ? "max-h-24 translate-y-0 border-b border-ant-border py-2 opacity-100"
-            : "pointer-events-none max-h-0 -translate-y-1 border-b-0 py-0 opacity-0"
-        }`}
-      >
-        <form action="/search" className="relative" onSubmit={() => setIsMobileOpen(false)}>
-          <input
-            type="search"
-            name="q"
-            value={mobileQuery}
-            onChange={(event) => setMobileQuery(event.target.value)}
-            autoFocus={isMobileOpen}
-            placeholder="Search colony"
-            aria-label="Search colony"
-            className="w-full rounded border border-ant-border bg-ant-paper px-3 py-2 outline-none transition focus:border-ant-primary"
-          />
-          <button type="submit" className="sr-only">
-            Search
-          </button>
-        </form>
-      </div>
+      {typeof document !== "undefined" ? createPortal(mobileSearchPanel, document.body) : null}
     </div>
   );
 }
