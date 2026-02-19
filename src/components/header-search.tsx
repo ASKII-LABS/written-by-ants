@@ -25,11 +25,16 @@ function SearchIcon({ className }: { className?: string }) {
 export function HeaderSearch() {
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") ?? "";
+  const [isMounted, setIsMounted] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [mobileQuery, setMobileQuery] = useState(initialQuery);
   const [mobilePanelTop, setMobilePanelTop] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mobilePanelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     setMobileQuery(initialQuery);
@@ -145,7 +150,7 @@ export function HeaderSearch() {
         <SearchIcon className="h-4 w-4" />
       </button>
 
-      {typeof document !== "undefined" ? createPortal(mobileSearchPanel, document.body) : null}
+      {isMounted ? createPortal(mobileSearchPanel, document.body) : null}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 
 import { PoemEditor } from "@/components/poem-editor";
+import { isMissingPoemFontColumnsError, normalizePoemFont } from "@/lib/poem-fonts";
 import { createClient } from "@/lib/supabase/server";
 import { stripHtml } from "@/lib/utils";
 
@@ -19,6 +20,8 @@ type EditablePoem = {
   title: string;
   content_html: string;
   is_published: boolean;
+  title_font: string | null;
+  content_font: string | null;
 };
 
 function getErrorMessage(error?: string) {
@@ -53,6 +56,8 @@ async function savePoemAction(formData: FormData) {
   const poemId = String(formData.get("poem_id") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
   const contentHtml = String(formData.get("content_html") ?? "<p></p>");
+  const titleFont = normalizePoemFont(String(formData.get("title_font") ?? ""));
+  const contentFont = normalizePoemFont(String(formData.get("content_font") ?? ""));
   const intent = normalizeIntent(String(formData.get("intent") ?? "save_draft"));
 
   if (!title) {
@@ -93,31 +98,70 @@ async function savePoemAction(formData: FormData) {
       notFound();
     }
 
-    const { error } = await supabase
+    const timestamp = new Date().toISOString();
+    const updateWithFontsResult = await supabase
       .from("poems")
       .update({
         title,
         content_html: contentHtml,
+        title_font: titleFont,
+        content_font: contentFont,
         is_published: isPublished,
-        updated_at: new Date().toISOString(),
+        updated_at: timestamp,
       })
       .eq("id", poemId)
       .eq("author_id", user.id);
+
+    let error = updateWithFontsResult.error;
+    if (isMissingPoemFontColumnsError(error)) {
+      const legacyUpdateResult = await supabase
+        .from("poems")
+        .update({
+          title,
+          content_html: contentHtml,
+          is_published: isPublished,
+          updated_at: timestamp,
+        })
+        .eq("id", poemId)
+        .eq("author_id", user.id);
+
+      error = legacyUpdateResult.error;
+    }
 
     if (error) {
       redirect(`/write?id=${poemId}&error=save_failed`);
     }
   } else {
-    const { data, error } = await supabase
+    const insertWithFontsResult = await supabase
       .from("poems")
       .insert({
         author_id: user.id,
         title,
         content_html: contentHtml,
+        title_font: titleFont,
+        content_font: contentFont,
         is_published: isPublished,
       })
       .select("id")
       .single();
+
+    let data = insertWithFontsResult.data;
+    let error = insertWithFontsResult.error;
+    if (isMissingPoemFontColumnsError(error)) {
+      const legacyInsertResult = await supabase
+        .from("poems")
+        .insert({
+          author_id: user.id,
+          title,
+          content_html: contentHtml,
+          is_published: isPublished,
+        })
+        .select("id")
+        .single();
+
+      data = legacyInsertResult.data;
+      error = legacyInsertResult.error;
+    }
 
     if (error || !data) {
       redirect("/write?error=save_failed");
@@ -197,18 +241,49 @@ export default async function WritePage({ searchParams }: WritePageProps) {
 
   let poem: EditablePoem | null = null;
   if (id) {
-    const { data: foundPoem } = await supabase
+    const foundPoemResult = await supabase
       .from("poems")
-      .select("id, title, content_html, is_published")
+      .select("id, title, content_html, is_published, title_font, content_font")
       .eq("id", id)
       .eq("author_id", user.id)
       .maybeSingle();
 
-    if (!foundPoem) {
-      notFound();
+    if (isMissingPoemFontColumnsError(foundPoemResult.error)) {
+      const legacyFoundPoemResult = await supabase
+        .from("poems")
+        .select("id, title, content_html, is_published")
+        .eq("id", id)
+        .eq("author_id", user.id)
+        .maybeSingle();
+
+      if (legacyFoundPoemResult.error) {
+        throw legacyFoundPoemResult.error;
+      }
+
+      if (!legacyFoundPoemResult.data) {
+        notFound();
+      }
+
+      poem = {
+        ...legacyFoundPoemResult.data,
+        title_font: null,
+        content_font: null,
+      } as EditablePoem;
+    } else {
+      if (foundPoemResult.error) {
+        throw foundPoemResult.error;
+      }
+
+      if (!foundPoemResult.data) {
+        notFound();
+      }
+
+      poem = foundPoemResult.data as EditablePoem;
     }
 
-    poem = foundPoem as EditablePoem;
+    if (!poem) {
+      notFound();
+    }
   }
 
   return (

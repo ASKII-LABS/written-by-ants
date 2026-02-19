@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { ProfilePoemTabs } from "@/components/profile-poem-tabs";
+import { isMissingPoemFontColumnsError } from "@/lib/poem-fonts";
 import { sanitizePoemHtml } from "@/lib/sanitize";
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,6 +13,8 @@ type UserPoem = {
   id: string;
   title: string;
   content_html: string;
+  title_font: string | null;
+  content_font: string | null;
   is_published: boolean;
   created_at: string;
   updated_at: string;
@@ -73,13 +76,36 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
     redirect("/onboarding");
   }
 
-  const { data: poems } = await supabase
+  const poemsResult = await supabase
     .from("poems")
-    .select("id, title, content_html, is_published, created_at, updated_at")
+    .select("id, title, content_html, title_font, content_font, is_published, created_at, updated_at")
     .eq("author_id", user.id)
     .order("updated_at", { ascending: false });
+  
+  let userPoems: UserPoem[] = [];
+  if (isMissingPoemFontColumnsError(poemsResult.error)) {
+    const legacyPoemsResult = await supabase
+      .from("poems")
+      .select("id, title, content_html, is_published, created_at, updated_at")
+      .eq("author_id", user.id)
+      .order("updated_at", { ascending: false });
 
-  const userPoems = (poems ?? []) as UserPoem[];
+    if (legacyPoemsResult.error) {
+      throw legacyPoemsResult.error;
+    }
+
+    userPoems = (legacyPoemsResult.data ?? []).map((poem) => ({
+      ...poem,
+      title_font: null,
+      content_font: null,
+    })) as UserPoem[];
+  } else {
+    if (poemsResult.error) {
+      throw poemsResult.error;
+    }
+
+    userPoems = (poemsResult.data ?? []) as UserPoem[];
+  }
   const poemsWithSafeHtml = userPoems.map((poem) => ({
     ...poem,
     safe_content_html: sanitizePoemHtml(poem.content_html),

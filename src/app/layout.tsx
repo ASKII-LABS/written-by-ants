@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Lora, Source_Sans_3 } from "next/font/google";
+import { Inter, Lora, Playfair_Display } from "next/font/google";
 
 import { Header } from "@/components/header";
 
@@ -11,8 +11,14 @@ const headingFont = Lora({
   display: "swap",
 });
 
-const bodyFont = Source_Sans_3({
+const bodyFont = Inter({
   variable: "--font-body",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const playfairFont = Playfair_Display({
+  variable: "--font-playfair",
   subsets: ["latin"],
   display: "swap",
 });
@@ -34,7 +40,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${headingFont.variable} ${bodyFont.variable} min-h-screen bg-ant-paper text-ant-ink`}>
+      <body
+        className={`${headingFont.variable} ${bodyFont.variable} ${playfairFont.variable} min-h-screen bg-ant-paper text-ant-ink`}
+      >
         <div className="min-h-screen bg-paper-grain">
           <Header />
           <main className="mx-auto w-full max-w-5xl px-4 pb-10">{children}</main>

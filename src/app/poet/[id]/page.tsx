@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { getPoemFontFamily, isMissingPoemFontColumnsError } from "@/lib/poem-fonts";
 import { sanitizePoemHtml } from "@/lib/sanitize";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
@@ -17,6 +18,8 @@ type PoetPoem = {
   id: string;
   title: string;
   content_html: string;
+  title_font: string | null;
+  content_font: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -47,14 +50,38 @@ export default async function PoetPage({ params }: PoetPageProps) {
   const poetName = profile.display_name ?? "Poet";
   const bio = profile.bio?.trim();
 
-  const { data: poems } = await supabase
+  const poemsResult = await supabase
     .from("poems")
-    .select("id, title, content_html, created_at, updated_at")
+    .select("id, title, content_html, title_font, content_font, created_at, updated_at")
     .eq("author_id", id)
     .eq("is_published", true)
     .order("created_at", { ascending: false });
+  
+  let publishedPoems: PoetPoem[] = [];
+  if (isMissingPoemFontColumnsError(poemsResult.error)) {
+    const legacyPoemsResult = await supabase
+      .from("poems")
+      .select("id, title, content_html, created_at, updated_at")
+      .eq("author_id", id)
+      .eq("is_published", true)
+      .order("created_at", { ascending: false });
 
-  const publishedPoems = (poems ?? []) as PoetPoem[];
+    if (legacyPoemsResult.error) {
+      throw legacyPoemsResult.error;
+    }
+
+    publishedPoems = (legacyPoemsResult.data ?? []).map((poem) => ({
+      ...poem,
+      title_font: null,
+      content_font: null,
+    })) as PoetPoem[];
+  } else {
+    if (poemsResult.error) {
+      throw poemsResult.error;
+    }
+
+    publishedPoems = (poemsResult.data ?? []) as PoetPoem[];
+  }
 
   return (
     <section className="space-y-6">
@@ -77,7 +104,7 @@ export default async function PoetPage({ params }: PoetPageProps) {
 
               return (
                 <article key={poem.id} className="rounded border border-ant-border bg-ant-paper p-5">
-                  <h3 className="font-serif text-2xl text-ant-primary">
+                  <h3 className="font-serif text-2xl text-ant-primary" style={{ fontFamily: getPoemFontFamily(poem.title_font) }}>
                     <Link href={`/poem/${poem.id}`} className="transition hover:text-ant-accent">
                       {poem.title}
                     </Link>
@@ -86,6 +113,7 @@ export default async function PoetPage({ params }: PoetPageProps) {
 
                   <section
                     className="prose-poem mt-3 text-ant-ink/90"
+                    style={{ fontFamily: getPoemFontFamily(poem.content_font) }}
                     dangerouslySetInnerHTML={{ __html: safeHtml }}
                   />
                 </article>

@@ -39,17 +39,19 @@ body {
     linear-gradient(180deg, var(--ant-paper) 0%, var(--ant-paper-2) 100%);
 }
 
-.prose-poem {
-  font-family: var(--font-heading), serif;
+.prose-poem,
+.poem-content {
   line-height: 1.15;
   font-size: 1.07rem;
 }
 
-.prose-poem p {
+.prose-poem p,
+.poem-content p {
   margin-bottom: 0.35rem;
 }
 
-.prose-poem p:last-child {
+.prose-poem p:last-child,
+.poem-content p:last-child {
   margin-bottom: 0;
 }
 

@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { toggleLikeAction } from "@/app/actions";
 import { DeletePoemForm } from "@/components/delete-poem-form";
+import { getPoemFontFamily, isMissingPoemFontColumnsError } from "@/lib/poem-fonts";
 import { sanitizePoemHtml } from "@/lib/sanitize";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
@@ -20,6 +21,8 @@ type PoemRecord = {
   id: string;
   title: string;
   content_html: string;
+  title_font: string | null;
+  content_font: string | null;
   author_id: string;
   is_published: boolean;
   created_at: string;
@@ -34,17 +37,42 @@ export default async function PoemPage({ params }: PoemPageProps) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: poem } = await supabase
+  const poemResult = await supabase
     .from("poems")
-    .select("id, title, content_html, author_id, is_published, created_at, updated_at")
+    .select("id, title, content_html, title_font, content_font, author_id, is_published, created_at, updated_at")
     .eq("id", id)
     .maybeSingle();
 
-  if (!poem) {
-    notFound();
+  let typedPoem: PoemRecord | null = null;
+  if (isMissingPoemFontColumnsError(poemResult.error)) {
+    const legacyPoemResult = await supabase
+      .from("poems")
+      .select("id, title, content_html, author_id, is_published, created_at, updated_at")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (legacyPoemResult.error) {
+      throw legacyPoemResult.error;
+    }
+
+    if (legacyPoemResult.data) {
+      typedPoem = {
+        ...legacyPoemResult.data,
+        title_font: null,
+        content_font: null,
+      } as PoemRecord;
+    }
+  } else {
+    if (poemResult.error) {
+      throw poemResult.error;
+    }
+
+    typedPoem = poemResult.data as PoemRecord | null;
   }
 
-  const typedPoem = poem as PoemRecord;
+  if (!typedPoem) {
+    notFound();
+  }
   const isAuthor = user?.id === typedPoem.author_id;
 
   if (!typedPoem.is_published && !isAuthor) {
@@ -105,7 +133,9 @@ export default async function PoemPage({ params }: PoemPageProps) {
   return (
     <article className="rounded border border-ant-border bg-ant-paper-2 p-6">
       <header className="mb-6 border-b border-ant-border pb-4">
-        <h1 className="font-serif text-4xl text-ant-primary">{typedPoem.title}</h1>
+        <h1 className="font-serif text-4xl text-ant-primary" style={{ fontFamily: getPoemFontFamily(typedPoem.title_font) }}>
+          {typedPoem.title}
+        </h1>
         <p className="mt-2 text-sm text-ant-ink/80">
           by {authorName} on {formatDate(typedPoem.created_at)}
         </p>
@@ -130,7 +160,11 @@ export default async function PoemPage({ params }: PoemPageProps) {
         ) : null}
       </header>
 
-      <section className="prose-poem" dangerouslySetInnerHTML={{ __html: safeHtml }} />
+      <section
+        className="prose-poem"
+        style={{ fontFamily: getPoemFontFamily(typedPoem.content_font) }}
+        dangerouslySetInnerHTML={{ __html: safeHtml }}
+      />
 
       <footer className="mt-6 flex items-center gap-3 border-t border-ant-border pt-4 text-sm">
         {typedPoem.is_published ? (

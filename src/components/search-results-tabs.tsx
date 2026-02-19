@@ -3,12 +3,15 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { getPoemFontFamily } from "@/lib/poem-fonts";
 import { formatDate } from "@/lib/utils";
 
 type SearchPoemResult = {
   id: string;
   title: string;
   safe_content_html: string;
+  title_font: string | null;
+  content_font: string | null;
   author_id: string;
   author_name: string;
   created_at: string;
@@ -68,7 +71,7 @@ export function SearchResultsTabs({ poemResults, poetResults, currentUserId }: S
 
               return (
                 <article key={poem.id} className="rounded border border-ant-border bg-ant-paper-2 p-5">
-                  <h2 className="font-serif text-2xl text-ant-primary">
+                  <h2 className="font-serif text-2xl text-ant-primary" style={{ fontFamily: getPoemFontFamily(poem.title_font) }}>
                     <Link href={`/poem/${poem.id}`} className="transition hover:text-ant-accent">
                       {poem.title}
                     </Link>
@@ -83,6 +86,7 @@ export function SearchResultsTabs({ poemResults, poetResults, currentUserId }: S
 
                   <section
                     className="prose-poem mt-3 text-ant-ink/90"
+                    style={{ fontFamily: getPoemFontFamily(poem.content_font) }}
                     dangerouslySetInnerHTML={{ __html: poem.safe_content_html }}
                   />
                 </article>

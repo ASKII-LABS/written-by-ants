@@ -3,12 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 
+import { getPoemFontFamily } from "@/lib/poem-fonts";
 import { formatDate } from "@/lib/utils";
 
 type ProfilePoem = {
   id: string;
   title: string;
   safe_content_html: string;
+  title_font: string | null;
+  content_font: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -64,7 +67,7 @@ export function ProfilePoemTabs({
         <div className="space-y-4">
           {visiblePoems.map((poem) => (
             <article key={poem.id} className="rounded border border-ant-border bg-ant-paper p-5">
-              <h3 className="font-serif text-2xl text-ant-primary">
+              <h3 className="font-serif text-2xl text-ant-primary" style={{ fontFamily: getPoemFontFamily(poem.title_font) }}>
                 <Link href={`/poem/${poem.id}`} className="transition hover:text-ant-accent">
                   {poem.title}
                 </Link>
@@ -77,6 +80,7 @@ export function ProfilePoemTabs({
 
               <section
                 className="prose-poem mt-3 text-ant-ink/90"
+                style={{ fontFamily: getPoemFontFamily(poem.content_font) }}
                 dangerouslySetInnerHTML={{ __html: poem.safe_content_html }}
               />
 

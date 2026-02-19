@@ -1,4 +1,5 @@
 import { SearchResultsTabs } from "@/components/search-results-tabs";
+import { isMissingPoemFontColumnsError } from "@/lib/poem-fonts";
 import { sanitizePoemHtml } from "@/lib/sanitize";
 import { createClient } from "@/lib/supabase/server";
 
@@ -14,6 +15,8 @@ type SearchPoem = {
   id: string;
   title: string;
   content_html: string;
+  title_font: string | null;
+  content_font: string | null;
   author_id: string;
   created_at: string;
 };
@@ -41,12 +44,12 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
     const [titleResult, contentResult, profileResult] = await Promise.all([
       supabase
         .from("poems")
-        .select("id, title, content_html, author_id, created_at")
+        .select("id, title, content_html, title_font, content_font, author_id, created_at")
         .eq("is_published", true)
         .ilike("title", `%${query}%`),
       supabase
         .from("poems")
-        .select("id, title, content_html, author_id, created_at")
+        .select("id, title, content_html, title_font, content_font, author_id, created_at")
         .eq("is_published", true)
         .ilike("content_html", `%${query}%`),
       supabase
@@ -55,14 +58,62 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
         .ilike("display_name", `%${query}%`),
     ]);
 
-    const poemMap = new Map<string, SearchPoem>();
-    [...(titleResult.data ?? []), ...(contentResult.data ?? [])].forEach((poem) => {
-      poemMap.set(poem.id, poem as SearchPoem);
-    });
+    if (profileResult.error) {
+      throw profileResult.error;
+    }
 
-    poemResults = Array.from(poemMap.values()).sort(
-      (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
-    );
+    if (isMissingPoemFontColumnsError(titleResult.error) || isMissingPoemFontColumnsError(contentResult.error)) {
+      const [legacyTitleResult, legacyContentResult] = await Promise.all([
+        supabase
+          .from("poems")
+          .select("id, title, content_html, author_id, created_at")
+          .eq("is_published", true)
+          .ilike("title", `%${query}%`),
+        supabase
+          .from("poems")
+          .select("id, title, content_html, author_id, created_at")
+          .eq("is_published", true)
+          .ilike("content_html", `%${query}%`),
+      ]);
+
+      if (legacyTitleResult.error) {
+        throw legacyTitleResult.error;
+      }
+
+      if (legacyContentResult.error) {
+        throw legacyContentResult.error;
+      }
+
+      const poemMap = new Map<string, SearchPoem>();
+      [...(legacyTitleResult.data ?? []), ...(legacyContentResult.data ?? [])].forEach((poem) => {
+        poemMap.set(poem.id, {
+          ...(poem as Omit<SearchPoem, "title_font" | "content_font">),
+          title_font: null,
+          content_font: null,
+        });
+      });
+
+      poemResults = Array.from(poemMap.values()).sort(
+        (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+      );
+    } else {
+      if (titleResult.error) {
+        throw titleResult.error;
+      }
+
+      if (contentResult.error) {
+        throw contentResult.error;
+      }
+
+      const poemMap = new Map<string, SearchPoem>();
+      [...(titleResult.data ?? []), ...(contentResult.data ?? [])].forEach((poem) => {
+        poemMap.set(poem.id, poem as SearchPoem);
+      });
+
+      poemResults = Array.from(poemMap.values()).sort(
+        (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+      );
+    }
 
     poetResults = ((profileResult.data ?? []) as SearchPoet[])
       .filter((poet) => poet.public_profile || poet.id === user?.id)
