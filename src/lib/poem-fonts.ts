@@ -1,4 +1,4 @@
-export const DEFAULT_POEM_FONT = "Inter" as const;
+export const DEFAULT_POEM_FONT = "Lora" as const;
 
 export const POEM_FONT_OPTIONS = [
   "Inter",
