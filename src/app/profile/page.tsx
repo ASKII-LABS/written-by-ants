@@ -20,6 +20,18 @@ type UserPoem = {
   updated_at: string;
 };
 
+type PoemWithSafeHtml = UserPoem & {
+  safe_content_html: string;
+  comment_count: number;
+  like_count: number;
+  liked_by_user: boolean;
+};
+
+type CommentCountRow = {
+  poem_id: string;
+  comment_count: number | string | null;
+};
+
 type ProfilePageProps = {
   searchParams: Promise<{
     tab?: string;
@@ -106,9 +118,61 @@ export default async function ProfilePage({ searchParams }: ProfilePageProps) {
 
     userPoems = (poemsResult.data ?? []) as UserPoem[];
   }
-  const poemsWithSafeHtml = userPoems.map((poem) => ({
+  const commentCountByPoem = new Map<string, number>();
+  const poemIds = userPoems.map((poem) => poem.id);
+  if (poemIds.length > 0) {
+    const commentCountResult = await supabase.rpc("comment_counts_for_poems", {
+      poem_ids: poemIds,
+    });
+
+    if (!commentCountResult.error) {
+      ((commentCountResult.data ?? []) as CommentCountRow[]).forEach((row) => {
+        commentCountByPoem.set(row.poem_id, Number(row.comment_count ?? 0));
+      });
+    } else if (commentCountResult.error.code === "42883" || commentCountResult.error.code === "PGRST202") {
+      const commentsResult = await supabase
+        .from("comments")
+        .select("poem_id")
+        .in("poem_id", poemIds);
+
+      if (commentsResult.error && commentsResult.error.code !== "42P01") {
+        throw commentsResult.error;
+      }
+
+      (commentsResult.data ?? []).forEach((comment) => {
+        commentCountByPoem.set(comment.poem_id, (commentCountByPoem.get(comment.poem_id) ?? 0) + 1);
+      });
+    } else if (commentCountResult.error.code !== "42P01") {
+      throw commentCountResult.error;
+    }
+  }
+
+  const likeCountByPoem = new Map<string, number>();
+  const likedByUser = new Set<string>();
+  if (poemIds.length > 0) {
+    const { data: reactions, error: reactionsError } = await supabase
+      .from("reactions")
+      .select("poem_id, user_id")
+      .in("poem_id", poemIds);
+
+    if (reactionsError) {
+      throw reactionsError;
+    }
+
+    (reactions ?? []).forEach((reaction) => {
+      likeCountByPoem.set(reaction.poem_id, (likeCountByPoem.get(reaction.poem_id) ?? 0) + 1);
+      if (reaction.user_id === user.id) {
+        likedByUser.add(reaction.poem_id);
+      }
+    });
+  }
+
+  const poemsWithSafeHtml: PoemWithSafeHtml[] = userPoems.map((poem) => ({
     ...poem,
     safe_content_html: sanitizePoemHtml(poem.content_html),
+    comment_count: commentCountByPoem.get(poem.id) ?? 0,
+    like_count: likeCountByPoem.get(poem.id) ?? 0,
+    liked_by_user: likedByUser.has(poem.id),
   }));
   const publishedPoems = poemsWithSafeHtml.filter((poem) => poem.is_published);
   const draftPoems = poemsWithSafeHtml.filter((poem) => !poem.is_published);

@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
+import { Heart } from "lucide-react";
 
-import { toggleLikeAction } from "@/app/actions";
 import { DeletePoemForm } from "@/components/delete-poem-form";
+import { PoemComments } from "@/components/poem-comments";
+import { PoemLikeControl } from "@/components/poem-like-control";
 import { getPoemFontFamily, isMissingPoemFontColumnsError } from "@/lib/poem-fonts";
 import { sanitizePoemHtml } from "@/lib/sanitize";
 import { createClient } from "@/lib/supabase/server";
@@ -116,6 +118,8 @@ export default async function PoemPage({ params }: PoemPageProps) {
     .maybeSingle();
 
   const authorName = authorProfile?.display_name ?? "Unknown Poet";
+  const authorHref = user?.id === typedPoem.author_id ? "/profile" : `/poet/${typedPoem.author_id}`;
+  const currentUserName = user?.id === typedPoem.author_id ? authorName : null;
   const safeHtml = sanitizePoemHtml(typedPoem.content_html);
 
   let likeCount = 0;
@@ -137,7 +141,11 @@ export default async function PoemPage({ params }: PoemPageProps) {
           {typedPoem.title}
         </h1>
         <p className="mt-2 text-sm text-ant-ink/80">
-          by {authorName} on {formatDate(typedPoem.created_at)}
+          by{" "}
+          <Link href={authorHref} className="text-ant-primary transition hover:underline">
+            {authorName}
+          </Link>{" "}
+          on {formatDate(typedPoem.created_at)}
         </p>
 
         {isAuthor ? (
@@ -166,33 +174,46 @@ export default async function PoemPage({ params }: PoemPageProps) {
         dangerouslySetInnerHTML={{ __html: safeHtml }}
       />
 
-      <footer className="mt-6 flex items-center gap-3 border-t border-ant-border pt-4 text-sm">
+      <footer className="mt-6 border-t border-ant-border pt-4 text-sm">
         {typedPoem.is_published ? (
           <>
             {user ? (
-              <form action={toggleLikeAction}>
-                <input type="hidden" name="poem_id" value={typedPoem.id} />
-                <button
-                  type="submit"
-                  className="cursor-pointer rounded border border-ant-border px-3 py-1 transition hover:border-ant-primary hover:text-ant-primary"
-                >
-                  {likedByUser ? "Unlike" : "Like"}
-                </button>
-              </form>
+              <PoemLikeControl
+                poemId={typedPoem.id}
+                initialLiked={likedByUser}
+                initialLikeCount={likeCount}
+              />
             ) : (
-              <Link
-                href="/login"
-                className="rounded border border-ant-border px-3 py-1 transition hover:border-ant-primary hover:text-ant-primary"
-              >
-                Like
-              </Link>
+              <div className="flex items-center gap-1">
+                <Link
+                  href="/login"
+                  aria-label="Sign in to like this poem"
+                  className="inline-flex items-center justify-center p-1 text-ant-ink/70 transition hover:text-ant-primary"
+                >
+                  <Heart aria-hidden="true" className="h-5 w-5" />
+                </Link>
+                <span className="tabular-nums text-ant-ink/70">{likeCount}</span>
+              </div>
             )}
-            <span className="text-ant-ink/70">{likeCount} likes</span>
           </>
         ) : (
           <span className="text-ant-ink/70">Drafts are only visible to their author.</span>
         )}
       </footer>
+
+      {typedPoem.is_published ? (
+        <PoemComments
+          poemId={typedPoem.id}
+          isSignedIn={Boolean(user)}
+          currentUserId={user?.id ?? null}
+          currentUserName={currentUserName}
+        />
+      ) : (
+        <section className="mt-8 border-t border-ant-border pt-5">
+          <h2 className="font-serif text-2xl text-ant-primary">Comments</h2>
+          <p className="mt-3 text-sm text-ant-ink/70">Comments are available after publishing.</p>
+        </section>
+      )}
     </article>
   );
 }

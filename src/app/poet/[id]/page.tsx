@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Heart, MessageCircle } from "lucide-react";
 
+import { PoemLikeControl } from "@/components/poem-like-control";
 import { getPoemFontFamily, isMissingPoemFontColumnsError } from "@/lib/poem-fonts";
 import { sanitizePoemHtml } from "@/lib/sanitize";
 import { createClient } from "@/lib/supabase/server";
@@ -22,6 +24,11 @@ type PoetPoem = {
   content_font: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type CommentCountRow = {
+  poem_id: string;
+  comment_count: number | string | null;
 };
 
 export default async function PoetPage({ params }: PoetPageProps) {
@@ -82,6 +89,55 @@ export default async function PoetPage({ params }: PoetPageProps) {
 
     publishedPoems = (poemsResult.data ?? []) as PoetPoem[];
   }
+  const poemIds = publishedPoems.map((poem) => poem.id);
+
+  const likeCountByPoem = new Map<string, number>();
+  const likedByUser = new Set<string>();
+  if (poemIds.length > 0) {
+    const { data: reactions, error: reactionsError } = await supabase
+      .from("reactions")
+      .select("poem_id, user_id")
+      .in("poem_id", poemIds);
+
+    if (reactionsError) {
+      throw reactionsError;
+    }
+
+    (reactions ?? []).forEach((reaction) => {
+      likeCountByPoem.set(reaction.poem_id, (likeCountByPoem.get(reaction.poem_id) ?? 0) + 1);
+      if (user && reaction.user_id === user.id) {
+        likedByUser.add(reaction.poem_id);
+      }
+    });
+  }
+
+  const commentCountByPoem = new Map<string, number>();
+  if (poemIds.length > 0) {
+    const commentCountResult = await supabase.rpc("comment_counts_for_poems", {
+      poem_ids: poemIds,
+    });
+
+    if (!commentCountResult.error) {
+      ((commentCountResult.data ?? []) as CommentCountRow[]).forEach((row) => {
+        commentCountByPoem.set(row.poem_id, Number(row.comment_count ?? 0));
+      });
+    } else if (commentCountResult.error.code === "42883" || commentCountResult.error.code === "PGRST202") {
+      const commentsResult = await supabase
+        .from("comments")
+        .select("poem_id")
+        .in("poem_id", poemIds);
+
+      if (commentsResult.error && commentsResult.error.code !== "42P01") {
+        throw commentsResult.error;
+      }
+
+      (commentsResult.data ?? []).forEach((comment) => {
+        commentCountByPoem.set(comment.poem_id, (commentCountByPoem.get(comment.poem_id) ?? 0) + 1);
+      });
+    } else if (commentCountResult.error.code !== "42P01") {
+      throw commentCountResult.error;
+    }
+  }
 
   return (
     <section className="space-y-6">
@@ -101,6 +157,9 @@ export default async function PoetPage({ params }: PoetPageProps) {
           <div className="mt-5 space-y-4">
             {publishedPoems.map((poem) => {
               const safeHtml = sanitizePoemHtml(poem.content_html);
+              const likeCount = likeCountByPoem.get(poem.id) ?? 0;
+              const liked = likedByUser.has(poem.id);
+              const commentCount = commentCountByPoem.get(poem.id) ?? 0;
 
               return (
                 <article key={poem.id} className="rounded border border-ant-border bg-ant-paper p-5">
@@ -116,6 +175,51 @@ export default async function PoetPage({ params }: PoetPageProps) {
                     style={{ fontFamily: getPoemFontFamily(poem.content_font) }}
                     dangerouslySetInnerHTML={{ __html: safeHtml }}
                   />
+
+                  <div className="mt-4 text-sm">
+                    {user ? (
+                      <div className="flex items-center gap-3">
+                        <PoemLikeControl
+                          poemId={poem.id}
+                          initialLiked={liked}
+                          initialLikeCount={likeCount}
+                        />
+                        <div className="flex items-center gap-1">
+                          <Link
+                            href={`/poem/${poem.id}#comments`}
+                            aria-label="Open comments"
+                            className="inline-flex items-center justify-center p-1 text-ant-ink/70 transition hover:text-ant-primary"
+                          >
+                            <MessageCircle aria-hidden="true" className="h-5 w-5" />
+                          </Link>
+                          <span className="tabular-nums text-ant-ink/70">{commentCount}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1">
+                          <Link
+                            href="/login"
+                            aria-label="Sign in to like this poem"
+                            className="inline-flex items-center justify-center p-1 text-ant-ink/70 transition hover:text-ant-primary"
+                          >
+                            <Heart aria-hidden="true" className="h-5 w-5" />
+                          </Link>
+                          <span className="tabular-nums text-ant-ink/70">{likeCount}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Link
+                            href={`/poem/${poem.id}#comments`}
+                            aria-label="Open comments"
+                            className="inline-flex items-center justify-center p-1 text-ant-ink/70 transition hover:text-ant-primary"
+                          >
+                            <MessageCircle aria-hidden="true" className="h-5 w-5" />
+                          </Link>
+                          <span className="tabular-nums text-ant-ink/70">{commentCount}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </article>
               );
             })}

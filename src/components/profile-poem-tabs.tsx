@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { MessageCircle } from "lucide-react";
 
+import { PoemLikeControl } from "@/components/poem-like-control";
 import { getPoemFontFamily } from "@/lib/poem-fonts";
 import { formatDate } from "@/lib/utils";
 
@@ -14,6 +16,9 @@ type ProfilePoem = {
   content_font: string | null;
   created_at: string;
   updated_at: string;
+  comment_count: number;
+  like_count: number;
+  liked_by_user: boolean;
 };
 
 type ProfilePoemTabsProps = {
@@ -91,6 +96,25 @@ export function ProfilePoemTabs({
                 >
                   {activeTab === "published" ? "View" : "Preview"}
                 </Link>
+                {activeTab === "published" ? (
+                  <>
+                    <PoemLikeControl
+                      poemId={poem.id}
+                      initialLiked={poem.liked_by_user}
+                      initialLikeCount={poem.like_count}
+                    />
+                    <div className="flex items-center gap-1">
+                      <Link
+                        href={`/poem/${poem.id}#comments`}
+                        aria-label="Open comments"
+                        className="inline-flex items-center justify-center p-1 text-ant-ink/70 transition hover:text-ant-primary"
+                      >
+                        <MessageCircle aria-hidden="true" className="h-4 w-4" />
+                      </Link>
+                      <span className="tabular-nums text-ant-ink/70">{poem.comment_count}</span>
+                    </div>
+                  </>
+                ) : null}
                 <Link
                   href={`/write?id=${poem.id}`}
                   className="rounded border border-ant-border px-2 py-1 transition hover:border-ant-primary hover:text-ant-primary"
