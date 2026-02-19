@@ -3,12 +3,12 @@
 A minimal poetry publishing platform built with:
 
 - Next.js (App Router) + TypeScript + Tailwind CSS
-- Supabase Auth (passwordless magic link) + Postgres + RLS
+- Supabase Auth (passwordless email code) + Postgres + RLS
 - TipTap rich text editor (text buttons only)
 
 ## Features
 
-- Passwordless login (`/login` -> magic link -> `/auth/callback`)
+- Passwordless login (`/login` -> email code verification)
 - First-login onboarding (`/onboarding`) for poet name + bio
 - Public homepage feed in chronological order
 - Protected writing flow with draft + publish + unpublish + delete
@@ -41,11 +41,13 @@ npm run dev
 1. Create a Supabase project.
 2. Keep Auth Email provider enabled.
 3. Run SQL from `supabase/schema.sql` in Supabase SQL Editor.
-4. In Supabase Auth URL settings, add redirect URLs:
+4. In Supabase Auth email template for sign-in, use `{{ .Token }}` (and avoid `{{ .ConfirmationURL }}`) so users receive a code instead of a link.
+5. Keep OTP length in sync with `OTP_LENGTH` in `src/components/login-form.tsx` (currently `8`).
+6. In Supabase Auth URL settings, add redirect URLs:
    - `http://localhost:3000/auth/callback`
    - `https://YOUR_PRODUCTION_DOMAIN/auth/callback`
    - `https://*.vercel.app/auth/callback` (preview deployments)
-5. Set Site URL:
+7. Set Site URL:
    - Local: `http://localhost:3000`
    - Production: `https://YOUR_PRODUCTION_DOMAIN`
 

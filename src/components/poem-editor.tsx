@@ -88,7 +88,7 @@ function FontSelect({ id, name, value, ariaLabel, onChange }: FontSelectProps) {
         aria-expanded={isOpen}
         aria-label={ariaLabel}
         onClick={() => setIsOpen((current) => !current)}
-        className="relative h-8 min-w-36 max-w-full cursor-pointer rounded-full border border-ant-border bg-ant-paper px-3 pr-9 text-left text-sm text-ant-ink outline-none transition hover:border-ant-primary focus:border-ant-primary"
+        className="relative h-8 min-w-36 max-w-full cursor-pointer rounded border border-ant-border bg-ant-paper px-3 pr-9 text-left text-sm text-ant-ink outline-none transition hover:border-ant-primary focus:border-ant-primary"
         style={{ fontFamily: getPoemFontFamily(value) }}
       >
         {value}

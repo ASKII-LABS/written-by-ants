@@ -2,12 +2,27 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { useFormStatus } from "react-dom";
 
 import { signOutAction } from "@/app/actions";
 
 type HeaderUserMenuProps = {
   poetName: string;
 };
+
+function LogoutButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="block w-full cursor-pointer bg-ant-primary px-3 py-2 text-left text-ant-paper transition hover:bg-ant-accent disabled:cursor-wait disabled:opacity-80"
+    >
+      {pending ? "Logging out..." : "Logout"}
+    </button>
+  );
+}
 
 export function HeaderUserMenu({ poetName }: HeaderUserMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -64,13 +79,7 @@ export function HeaderUserMenu({ poetName }: HeaderUserMenuProps) {
             Settings
           </Link>
           <form action={signOutAction} className="border-t border-ant-border">
-            <button
-              type="submit"
-              onClick={() => setIsOpen(false)}
-              className="block w-full cursor-pointer bg-ant-primary px-3 py-2 text-left text-ant-paper transition hover:bg-ant-accent"
-            >
-              Logout
-            </button>
+            <LogoutButton />
           </form>
         </div>
       ) : null}

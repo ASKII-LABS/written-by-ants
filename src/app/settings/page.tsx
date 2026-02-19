@@ -138,16 +138,6 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               />
               <span>Public profile</span>
             </label>
-
-            <label className="flex items-center gap-2 opacity-70">
-              <input
-                type="checkbox"
-                defaultChecked={false}
-                disabled
-                className="h-4 w-4 accent-ant-primary"
-              />
-              <span>Show my email publicly (not supported, always off)</span>
-            </label>
           </div>
 
           <button
