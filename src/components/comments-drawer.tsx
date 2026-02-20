@@ -636,35 +636,60 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
                 ) : null}
 
                 {viewer.isSignedIn ? (
-                  <form onSubmit={onSubmit} className="mt-5">
-                    <label htmlFor="drawer-comment-content" className="sr-only">
-                      Add a comment
-                    </label>
-                    <div className="grid">
-                      <textarea
-                        id="drawer-comment-content"
-                        ref={inputRef}
-                        value={draft}
-                        onChange={(event) => setDraft(event.target.value)}
-                        onKeyDown={onComposerKeyDown}
-                        rows={1}
-                        placeholder="Leave a comment..."
-                        className="col-start-1 row-start-1 w-full resize-none rounded border border-ant-border bg-ant-paper px-4 py-3 pr-16 text-[0.95rem] text-ant-ink outline-none transition focus:border-ant-primary"
-                      />
+                 <form onSubmit={onSubmit} className="mt-5">
+  <label htmlFor="drawer-comment-content" className="sr-only">
+    Add a comment
+  </label>
 
-                      <div className="col-start-1 row-start-1 flex items-center justify-end pr-3 pointer-events-none">
-                        <button
-                          type="submit"
-                          disabled={draft.trim().length === 0 || isSubmitting}
-                          aria-label={isSubmitting ? "Posting comment" : "Post comment"}
-                          className="pointer-events-auto inline-flex h-8 w-8 items-center justify-center rounded border border-ant-primary bg-ant-primary text-ant-paper transition hover:bg-ant-accent disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <ArrowUp aria-hidden="true" className="h-[18px] w-[18px]" />
-                        </button>
-                      </div>
-                    </div>
-                    {submitError ? <p className="mt-2 text-xs text-ant-primary">{submitError}</p> : null}
-                  </form>
+  <div className="grid">
+    <textarea
+      id="drawer-comment-content"
+      ref={inputRef}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onKeyDown={onComposerKeyDown}
+      rows={1}
+      placeholder="Leave a comment..."
+      className="
+        col-start-1 row-start-1
+        w-full resize-none
+        min-h-[52px]
+        leading-6
+        overflow-hidden
+        rounded border border-ant-border
+        bg-ant-paper
+        px-4 py-3 pr-14
+        text-[0.95rem] text-ant-ink
+        outline-none transition
+        focus:border-ant-primary
+      "
+    />
+
+    <div className="col-start-1 row-start-1 flex items-center justify-end pr-2 pointer-events-none">
+      <button
+        type="submit"
+        disabled={draft.trim().length === 0 || isSubmitting}
+        aria-label={isSubmitting ? "Posting comment" : "Post comment"}
+        className="
+          pointer-events-auto
+          inline-flex h-8 w-8 items-center justify-center
+          rounded border border-ant-primary
+          bg-ant-primary text-ant-paper
+          transition hover:bg-ant-accent
+          disabled:cursor-not-allowed disabled:opacity-60
+        "
+      >
+        <ArrowUp aria-hidden="true" className="h-4 w-4" />
+      </button>
+    </div>
+  </div>
+
+  {submitError ? (
+    <p className="mt-2 text-xs text-ant-primary">
+      {submitError}
+    </p>
+  ) : null}
+</form>
                 ) : (
                   <p className="mt-5 text-sm text-ant-ink/70">
                     <Link href="/login" className="text-ant-primary transition hover:underline">
