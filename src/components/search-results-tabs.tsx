@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 
+import { PoemCardMenu } from "@/components/poem-card-menu";
 import { getPoemFontFamily } from "@/lib/poem-fonts";
 import { formatDate } from "@/lib/utils";
 
@@ -27,9 +28,15 @@ type SearchResultsTabsProps = {
   poemResults: SearchPoemResult[];
   poetResults: SearchPoetResult[];
   currentUserId?: string;
+  deletePoemAction: (formData: FormData) => Promise<void>;
 };
 
-export function SearchResultsTabs({ poemResults, poetResults, currentUserId }: SearchResultsTabsProps) {
+export function SearchResultsTabs({
+  poemResults,
+  poetResults,
+  currentUserId,
+  deletePoemAction,
+}: SearchResultsTabsProps) {
   const [activeTab, setActiveTab] = useState<"poems" | "poets">("poems");
 
   return (
@@ -68,13 +75,26 @@ export function SearchResultsTabs({ poemResults, poetResults, currentUserId }: S
           <div className="space-y-4">
             {poemResults.map((poem) => {
               const authorHref = currentUserId === poem.author_id ? "/profile" : `/poet/${poem.author_id}`;
+              const isOwner = currentUserId === poem.author_id;
 
               return (
-                <article key={poem.id} className="rounded border border-ant-border bg-ant-paper-2 p-5">
-                  <h2 className="font-serif text-2xl text-ant-primary" style={{ fontFamily: getPoemFontFamily(poem.title_font) }}>
-                    <Link href={`/poem/${poem.id}`} className="transition hover:text-ant-accent">
-                      {poem.title}
-                    </Link>
+                <article
+                  key={poem.id}
+                  id={`poem-${poem.id}`}
+                  className="relative rounded border border-ant-border bg-ant-paper-2 p-5"
+                >
+                  <PoemCardMenu
+                    poemId={poem.id}
+                    poemTitle={poem.title}
+                    isOwner={isOwner}
+                    deletePoemAction={deletePoemAction}
+                  />
+
+                  <h2
+                    className="pr-10 font-serif text-2xl text-ant-primary"
+                    style={{ fontFamily: getPoemFontFamily(poem.title_font) }}
+                  >
+                    {poem.title}
                   </h2>
                   <p className="mt-1 text-xs text-ant-ink/70">
                     by{" "}

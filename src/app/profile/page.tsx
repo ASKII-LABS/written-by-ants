@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { deletePoemAction } from "@/app/actions";
 import { ProfilePoemTabs } from "@/components/profile-poem-tabs";
 import { isMissingPoemFontColumnsError } from "@/lib/poem-fonts";
 import { sanitizePoemHtml } from "@/lib/sanitize";
@@ -37,36 +37,6 @@ type ProfilePageProps = {
     tab?: string;
   }>;
 };
-
-async function deletePoemAction(formData: FormData) {
-  "use server";
-
-  const poemId = String(formData.get("poem_id") ?? "").trim();
-  if (!poemId) {
-    redirect("/profile");
-  }
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-
-  await supabase
-    .from("poems")
-    .delete()
-    .eq("id", poemId)
-    .eq("author_id", user.id);
-
-  revalidatePath("/");
-  revalidatePath("/profile");
-  revalidatePath(`/poem/${poemId}`);
-  revalidatePath(`/poet/${user.id}`);
-  redirect("/profile");
-}
 
 export default async function ProfilePage({ searchParams }: ProfilePageProps) {
   const supabase = await createClient();

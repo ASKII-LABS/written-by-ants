@@ -13,6 +13,35 @@ export async function signOutAction() {
   redirect("/");
 }
 
+export async function deletePoemAction(formData: FormData) {
+  const poemId = String(formData.get("poem_id") ?? "").trim();
+
+  if (!poemId) {
+    return;
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  await supabase
+    .from("poems")
+    .delete()
+    .eq("id", poemId)
+    .eq("author_id", user.id);
+
+  revalidatePath("/");
+  revalidatePath("/profile");
+  revalidatePath("/search");
+  revalidatePath(`/poet/${user.id}`);
+  revalidatePath(`/write`);
+}
+
 export async function toggleLikeAction(formData: FormData) {
   const poemId = String(formData.get("poem_id") ?? "").trim();
 
@@ -31,7 +60,7 @@ export async function toggleLikeAction(formData: FormData) {
 
   const { data: poem } = await supabase
     .from("poems")
-    .select("id, is_published")
+    .select("id, is_published, author_id")
     .eq("id", poemId)
     .maybeSingle();
 
@@ -63,8 +92,9 @@ export async function toggleLikeAction(formData: FormData) {
   }
 
   revalidatePath("/");
-  revalidatePath(`/poem/${poemId}`);
   revalidatePath("/profile");
+  revalidatePath("/search");
+  revalidatePath(`/poet/${poem.author_id}`);
 }
 
 export async function setLikeStateAction(formData: FormData) {
@@ -87,7 +117,7 @@ export async function setLikeStateAction(formData: FormData) {
 
   const { data: poem } = await supabase
     .from("poems")
-    .select("id, is_published")
+    .select("id, is_published, author_id")
     .eq("id", poemId)
     .maybeSingle();
 
@@ -112,8 +142,9 @@ export async function setLikeStateAction(formData: FormData) {
   }
 
   revalidatePath("/");
-  revalidatePath(`/poem/${poemId}`);
   revalidatePath("/profile");
+  revalidatePath("/search");
+  revalidatePath(`/poet/${poem.author_id}`);
 }
 
 export type AddedComment = {
@@ -144,7 +175,7 @@ export async function addCommentAction(formData: FormData): Promise<AddedComment
 
   const { data: poem } = await supabase
     .from("poems")
-    .select("id, is_published")
+    .select("id, is_published, author_id")
     .eq("id", poemId)
     .maybeSingle();
 
@@ -174,7 +205,10 @@ export async function addCommentAction(formData: FormData): Promise<AddedComment
 
   const authorName = profile?.display_name ?? user.email?.split("@")[0] ?? "Poet";
 
-  revalidatePath(`/poem/${poemId}`);
+  revalidatePath("/");
+  revalidatePath("/profile");
+  revalidatePath("/search");
+  revalidatePath(`/poet/${poem.author_id}`);
 
   return {
     id: insertedComment.id,

@@ -34,9 +34,10 @@ body {
 
 .bg-paper-grain {
   background-image:
-    radial-gradient(circle at 12% 16%, rgb(218 100 94 / 0.1) 0, transparent 36%),
-    radial-gradient(circle at 86% 14%, rgb(204 142 132 / 0.08) 0, transparent 30%),
-    linear-gradient(180deg, var(--ant-paper) 0%, var(--ant-paper-2) 100%);
+    radial-gradient(160% 110% at 16% 10%, rgb(218 100 94 / 0.07) 0%, rgb(218 100 94 / 0.03) 42%, transparent 78%),
+    radial-gradient(150% 100% at 84% 12%, rgb(204 142 132 / 0.06) 0%, rgb(204 142 132 / 0.025) 40%, transparent 80%),
+    linear-gradient(180deg, rgb(218 100 94 / 0.03) 0%, transparent 32%),
+    linear-gradient(180deg, #e8e1d2 0%, var(--ant-paper) 44%, var(--ant-paper-2) 100%);
 }
 
 .prose-poem,

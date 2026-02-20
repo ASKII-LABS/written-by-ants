@@ -83,7 +83,6 @@ async function savePoemAction(formData: FormData) {
     redirect("/login");
   }
 
-  let savedId = poemId;
   const isPublished = intent === "publish";
 
   if (poemId) {
@@ -167,14 +166,12 @@ async function savePoemAction(formData: FormData) {
       redirect("/write?error=save_failed");
     }
 
-    savedId = data.id;
   }
 
   revalidatePath("/");
   revalidatePath("/profile");
-  if (savedId) {
-    revalidatePath(`/poem/${savedId}`);
-  }
+  revalidatePath("/search");
+  revalidatePath(`/poet/${user.id}`);
 
   if (intent === "publish") {
     redirect("/");
@@ -212,7 +209,8 @@ async function deletePoemAction(formData: FormData) {
 
   revalidatePath("/");
   revalidatePath("/profile");
-  revalidatePath(`/poem/${poemId}`);
+  revalidatePath("/search");
+  revalidatePath(`/poet/${user.id}`);
   redirect("/profile");
 }
 

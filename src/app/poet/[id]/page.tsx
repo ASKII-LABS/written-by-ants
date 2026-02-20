@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Heart, MessageCircle } from "lucide-react";
+import { Heart } from "lucide-react";
 
+import { deletePoemAction } from "@/app/actions";
+import { CommentsTriggerButton } from "@/components/comments-trigger-button";
+import { MobileCommentsPrefetch } from "@/components/mobile-comments-prefetch";
+import { PoemCardMenu } from "@/components/poem-card-menu";
 import { PoemLikeControl } from "@/components/poem-like-control";
 import { getPoemFontFamily, isMissingPoemFontColumnsError } from "@/lib/poem-fonts";
 import { sanitizePoemHtml } from "@/lib/sanitize";
@@ -160,13 +164,27 @@ export default async function PoetPage({ params }: PoetPageProps) {
               const likeCount = likeCountByPoem.get(poem.id) ?? 0;
               const liked = likedByUser.has(poem.id);
               const commentCount = commentCountByPoem.get(poem.id) ?? 0;
+              const isOwner = user?.id === id;
 
               return (
-                <article key={poem.id} className="rounded border border-ant-border bg-ant-paper p-5">
-                  <h3 className="font-serif text-2xl text-ant-primary" style={{ fontFamily: getPoemFontFamily(poem.title_font) }}>
-                    <Link href={`/poem/${poem.id}`} className="transition hover:text-ant-accent">
-                      {poem.title}
-                    </Link>
+                <article
+                  key={poem.id}
+                  id={`poem-${poem.id}`}
+                  className="relative rounded border border-ant-border bg-ant-paper p-5"
+                >
+                  <MobileCommentsPrefetch poemId={poem.id} />
+                  <PoemCardMenu
+                    poemId={poem.id}
+                    poemTitle={poem.title}
+                    isOwner={Boolean(isOwner)}
+                    deletePoemAction={deletePoemAction}
+                  />
+
+                  <h3
+                    className="pr-10 font-serif text-2xl text-ant-primary"
+                    style={{ fontFamily: getPoemFontFamily(poem.title_font) }}
+                  >
+                    {poem.title}
                   </h3>
                   <p className="mt-1 text-xs text-ant-ink/70">Published on {formatDate(poem.created_at)}</p>
 
@@ -184,16 +202,7 @@ export default async function PoetPage({ params }: PoetPageProps) {
                           initialLiked={liked}
                           initialLikeCount={likeCount}
                         />
-                        <div className="flex items-center gap-1">
-                          <Link
-                            href={`/poem/${poem.id}#comments`}
-                            aria-label="Open comments"
-                            className="inline-flex items-center justify-center p-1 text-ant-ink/70 transition hover:text-ant-primary"
-                          >
-                            <MessageCircle aria-hidden="true" className="h-5 w-5" />
-                          </Link>
-                          <span className="tabular-nums text-ant-ink/70">{commentCount}</span>
-                        </div>
+                        <CommentsTriggerButton poemId={poem.id} commentCount={commentCount} />
                       </div>
                     ) : (
                       <div className="flex items-center gap-3">
@@ -207,16 +216,7 @@ export default async function PoetPage({ params }: PoetPageProps) {
                           </Link>
                           <span className="tabular-nums text-ant-ink/70">{likeCount}</span>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <Link
-                            href={`/poem/${poem.id}#comments`}
-                            aria-label="Open comments"
-                            className="inline-flex items-center justify-center p-1 text-ant-ink/70 transition hover:text-ant-primary"
-                          >
-                            <MessageCircle aria-hidden="true" className="h-5 w-5" />
-                          </Link>
-                          <span className="tabular-nums text-ant-ink/70">{commentCount}</span>
-                        </div>
+                        <CommentsTriggerButton poemId={poem.id} commentCount={commentCount} />
                       </div>
                     )}
                   </div>

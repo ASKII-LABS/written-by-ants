@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { MessageCircle } from "lucide-react";
 
+import { CommentsTriggerButton } from "@/components/comments-trigger-button";
+import { MobileCommentsPrefetch } from "@/components/mobile-comments-prefetch";
+import { PoemCardMenu } from "@/components/poem-card-menu";
 import { PoemLikeControl } from "@/components/poem-like-control";
 import { getPoemFontFamily } from "@/lib/poem-fonts";
 import { formatDate } from "@/lib/utils";
@@ -71,11 +72,24 @@ export function ProfilePoemTabs({
       ) : (
         <div className="space-y-4">
           {visiblePoems.map((poem) => (
-            <article key={poem.id} className="rounded border border-ant-border bg-ant-paper p-5">
-              <h3 className="font-serif text-2xl text-ant-primary" style={{ fontFamily: getPoemFontFamily(poem.title_font) }}>
-                <Link href={`/poem/${poem.id}`} className="transition hover:text-ant-accent">
-                  {poem.title}
-                </Link>
+            <article
+              key={poem.id}
+              id={`poem-${poem.id}`}
+              className="relative rounded border border-ant-border bg-ant-paper p-5"
+            >
+              <MobileCommentsPrefetch poemId={poem.id} />
+              <PoemCardMenu
+                poemId={poem.id}
+                poemTitle={poem.title}
+                isOwner
+                deletePoemAction={deletePoemAction}
+              />
+
+              <h3
+                className="pr-10 font-serif text-2xl text-ant-primary"
+                style={{ fontFamily: getPoemFontFamily(poem.title_font) }}
+              >
+                {poem.title}
               </h3>
               <p className="mt-1 text-xs text-ant-ink/70">
                 {activeTab === "published"
@@ -90,12 +104,6 @@ export function ProfilePoemTabs({
               />
 
               <div className="mt-4 flex items-center gap-2 text-sm">
-                <Link
-                  href={`/poem/${poem.id}`}
-                  className="rounded border border-ant-border px-2 py-1 transition hover:border-ant-primary hover:text-ant-primary"
-                >
-                  {activeTab === "published" ? "View" : "Preview"}
-                </Link>
                 {activeTab === "published" ? (
                   <>
                     <PoemLikeControl
@@ -103,40 +111,13 @@ export function ProfilePoemTabs({
                       initialLiked={poem.liked_by_user}
                       initialLikeCount={poem.like_count}
                     />
-                    <div className="flex items-center gap-1">
-                      <Link
-                        href={`/poem/${poem.id}#comments`}
-                        aria-label="Open comments"
-                        className="inline-flex items-center justify-center p-1 text-ant-ink/70 transition hover:text-ant-primary"
-                      >
-                        <MessageCircle aria-hidden="true" className="h-4 w-4" />
-                      </Link>
-                      <span className="tabular-nums text-ant-ink/70">{poem.comment_count}</span>
-                    </div>
+                    <CommentsTriggerButton
+                      poemId={poem.id}
+                      commentCount={poem.comment_count}
+                      iconClassName="h-4 w-4"
+                    />
                   </>
                 ) : null}
-                <Link
-                  href={`/write?id=${poem.id}`}
-                  className="rounded border border-ant-border px-2 py-1 transition hover:border-ant-primary hover:text-ant-primary"
-                >
-                  Edit
-                </Link>
-                <form
-                  action={deletePoemAction}
-                  onSubmit={(event) => {
-                    if (!confirm("Delete this poem? This action cannot be undone.")) {
-                      event.preventDefault();
-                    }
-                  }}
-                >
-                  <input type="hidden" name="poem_id" value={poem.id} />
-                  <button
-                    type="submit"
-                    className="cursor-pointer rounded border border-ant-border px-2 py-1 text-ant-primary transition hover:border-ant-primary hover:bg-ant-primary hover:text-ant-paper"
-                  >
-                    Delete
-                  </button>
-                </form>
               </div>
             </article>
           ))}

@@ -1,3 +1,4 @@
+import { deletePoemAction } from "@/app/actions";
 import { SearchResultsTabs } from "@/components/search-results-tabs";
 import { isMissingPoemFontColumnsError } from "@/lib/poem-fonts";
 import { sanitizePoemHtml } from "@/lib/sanitize";
@@ -162,6 +163,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
           poemResults={normalizedPoemResults}
           poetResults={normalizedPoetResults}
           currentUserId={user?.id}
+          deletePoemAction={deletePoemAction}
         />
       ) : null}
     </section>

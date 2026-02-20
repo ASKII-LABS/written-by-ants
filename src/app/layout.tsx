@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Lora, Playfair_Display } from "next/font/google";
 
+import { CommentsDrawerProvider } from "@/components/comments-drawer-provider";
 import { Header } from "@/components/header";
 
 import "./globals.css";
@@ -38,14 +39,23 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const currentYear = new Date().getFullYear();
+
   return (
     <html lang="en">
       <body
         className={`${headingFont.variable} ${bodyFont.variable} ${playfairFont.variable} min-h-screen bg-ant-paper text-ant-ink`}
       >
-        <div className="min-h-screen bg-paper-grain">
+        <div className="flex min-h-screen flex-col bg-paper-grain">
           <Header />
-          <main className="mx-auto w-full max-w-5xl px-4 pb-10">{children}</main>
+          <CommentsDrawerProvider>
+            <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-10">{children}</main>
+          </CommentsDrawerProvider>
+          <footer className="border-t border-ant-border bg-ant-paper-2/80 px-4 py-4 backdrop-blur">
+            <div className="mx-auto w-full max-w-5xl text-center text-xs text-ant-ink/75">
+              Copyright &copy; {currentYear} ASKII Labs. All rights reserved.
+            </div>
+          </footer>
         </div>
       </body>
     </html>
