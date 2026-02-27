@@ -8,6 +8,10 @@
   --ant-paper-2: #ddd6c4;
   --ant-border: #bcb5a6;
   --ant-ink: #2f2a23;
+  --ant-scrollbar-size: 12px;
+  --ant-scrollbar-track: var(--ant-paper-2);
+  --ant-scrollbar-thumb: var(--ant-muted-accent);
+  --ant-scrollbar-thumb-hover: var(--ant-primary);
 }
 
 @theme inline {
@@ -24,6 +28,36 @@
 
 * {
   border-color: var(--ant-border);
+  scrollbar-color: var(--ant-scrollbar-thumb) var(--ant-scrollbar-track);
+  scrollbar-width: thin;
+}
+
+html {
+  scrollbar-color: var(--ant-scrollbar-thumb) var(--ant-scrollbar-track);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: var(--ant-scrollbar-size);
+  height: var(--ant-scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--ant-scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--ant-scrollbar-thumb);
+  border: 2px solid var(--ant-scrollbar-track);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ant-scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--ant-scrollbar-track);
 }
 
 body {

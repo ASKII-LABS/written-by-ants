@@ -147,6 +147,54 @@ export async function setLikeStateAction(formData: FormData) {
   revalidatePath(`/poet/${poem.author_id}`);
 }
 
+export async function deleteCommentAction(formData: FormData): Promise<boolean> {
+  const commentId = String(formData.get("comment_id") ?? "").trim();
+  const poemId = String(formData.get("poem_id") ?? "").trim();
+
+  if (!commentId || !poemId) {
+    return false;
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const { count, error: deleteError } = await supabase
+    .from("comments")
+    .delete({ count: "exact" })
+    .eq("id", commentId)
+    .eq("poem_id", poemId)
+    .eq("author_id", user.id);
+
+  if (deleteError) {
+    throw deleteError;
+  }
+
+  if (!count || count < 1) {
+    return false;
+  }
+
+  const { data: poem } = await supabase
+    .from("poems")
+    .select("author_id")
+    .eq("id", poemId)
+    .maybeSingle();
+
+  revalidatePath("/");
+  revalidatePath("/profile");
+  revalidatePath("/search");
+  if (poem?.author_id) {
+    revalidatePath(`/poet/${poem.author_id}`);
+  }
+
+  return true;
+}
+
 export type AddedComment = {
   id: string;
   poemId: string;

@@ -11,10 +11,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { ArrowUp, X } from "lucide-react";
+import { ArrowUp, Trash2, X } from "lucide-react";
 import useSWRInfinite from "swr/infinite";
 
-import { addCommentAction, type AddedComment } from "@/app/actions";
+import { addCommentAction, deleteCommentAction, type AddedComment } from "@/app/actions";
 import { useDrawerMode } from "@/hooks/use-drawer-mode";
 import {
   COMMENT_PAGE_SIZE,
@@ -58,10 +58,13 @@ function toDrawerComment(comment: AddedComment): DrawerComment {
 type CommentCardProps = {
   comment: DrawerComment;
   currentUserId: string | null;
+  isDeleting: boolean;
+  onDeleteComment: (commentId: string) => void;
 };
 
-function CommentCard({ comment, currentUserId }: CommentCardProps) {
+function CommentCard({ comment, currentUserId, isDeleting, onDeleteComment }: CommentCardProps) {
   const authorHref = currentUserId === comment.authorId ? "/profile" : `/poet/${comment.authorId}`;
+  const canDelete = currentUserId === comment.authorId && !comment.isPending;
 
   return (
     <article
@@ -69,12 +72,32 @@ function CommentCard({ comment, currentUserId }: CommentCardProps) {
         comment.isPending ? "opacity-75" : ""
       }`}
     >
-      <p className="text-xs text-ant-ink/70">
-        <Link href={authorHref} className="font-medium text-ant-ink transition hover:underline">
-          {comment.authorName}
-        </Link>{" "}
-        <span>- {comment.isPending ? "Sending..." : formatDate(comment.createdAt)}</span>
-      </p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs text-ant-ink/70">
+          <Link href={authorHref} className="font-medium text-ant-ink transition hover:underline">
+            {comment.authorName}
+          </Link>{" "}
+          <span>- {comment.isPending ? "Sending..." : formatDate(comment.createdAt)}</span>
+        </p>
+        {canDelete ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (!confirm("Delete this comment? This action cannot be undone.")) {
+                return;
+              }
+
+              onDeleteComment(comment.id);
+            }}
+            disabled={isDeleting}
+            aria-label={isDeleting ? "Deleting comment" : "Delete comment"}
+            className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-ant-ink/70 transition hover:text-ant-primary disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+            <span>{isDeleting ? "Deleting..." : "Delete"}</span>
+          </button>
+        ) : null}
+      </div>
       <p className="mt-1 whitespace-pre-wrap text-sm text-ant-ink/90">{comment.content}</p>
     </article>
   );
@@ -83,9 +106,16 @@ function CommentCard({ comment, currentUserId }: CommentCardProps) {
 type VirtualizedCommentListProps = {
   comments: DrawerComment[];
   currentUserId: string | null;
+  deletingCommentIds: Set<string>;
+  onDeleteComment: (commentId: string) => void;
 };
 
-function VirtualizedCommentList({ comments, currentUserId }: VirtualizedCommentListProps) {
+function VirtualizedCommentList({
+  comments,
+  currentUserId,
+  deletingCommentIds,
+  onDeleteComment,
+}: VirtualizedCommentListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [measuredHeights, setMeasuredHeights] = useState<Record<string, number>>({});
   const [scrollTop, setScrollTop] = useState(0);
@@ -190,7 +220,12 @@ function VirtualizedCommentList({ comments, currentUserId }: VirtualizedCommentL
             style={{ transform: `translateY(${row.top}px)` }}
           >
             <div ref={(node) => setMeasuredHeight(row.comment.id, node)} className="pb-3">
-              <CommentCard comment={row.comment} currentUserId={currentUserId} />
+              <CommentCard
+                comment={row.comment}
+                currentUserId={currentUserId}
+                isDeleting={deletingCommentIds.has(row.comment.id)}
+                onDeleteComment={onDeleteComment}
+              />
             </div>
           </li>
         ))}
@@ -228,6 +263,7 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
   const [draft, setDraft] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingCommentIds, setDeletingCommentIds] = useState<Set<string>>(new Set());
 
   const { data, error, isLoading, isValidating, mutate, setSize, size } =
     useSWRInfinite<PoemCommentsResponse>(
@@ -268,6 +304,7 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
 
     setDraft("");
     setSubmitError(null);
+    setDeletingCommentIds(new Set());
     setDragOffsetY(0);
     setIsDragging(false);
     void setSize(1);
@@ -489,6 +526,76 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
     }
   }
 
+  async function onDeleteComment(commentId: string) {
+    if (!poemId || deletingCommentIds.has(commentId)) {
+      return;
+    }
+
+    const previousPages = data;
+    setSubmitError(null);
+    setDeletingCommentIds((current) => new Set(current).add(commentId));
+
+    await mutate(
+      (existingPages) => {
+        if (!existingPages || existingPages.length === 0) {
+          return existingPages;
+        }
+
+        const nextPages = existingPages.map((page) => {
+          const nextComments = page.comments.filter((comment) => comment.id !== commentId);
+          return nextComments.length === page.comments.length
+            ? page
+            : {
+                ...page,
+                comments: nextComments,
+              };
+        });
+
+        const removedComment = nextPages.some((page, index) => page !== existingPages[index]);
+        if (!removedComment) {
+          return existingPages;
+        }
+
+        const [first, ...rest] = nextPages;
+        return [
+          {
+            ...first,
+            commentCount: Math.max(0, first.commentCount - 1),
+          },
+          ...rest,
+        ];
+      },
+      { revalidate: false },
+    );
+
+    const formData = new FormData();
+    formData.set("poem_id", poemId);
+    formData.set("comment_id", commentId);
+
+    try {
+      const deleted = await deleteCommentAction(formData);
+      if (!deleted) {
+        throw new Error("Comment was not deleted.");
+      }
+
+      void mutate();
+    } catch {
+      if (previousPages) {
+        await mutate(previousPages, { revalidate: false });
+      } else {
+        void mutate();
+      }
+
+      setSubmitError("Could not delete your comment. Try again.");
+    } finally {
+      setDeletingCommentIds((current) => {
+        const next = new Set(current);
+        next.delete(commentId);
+        return next;
+      });
+    }
+  }
+
   function onComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== "Enter" || event.shiftKey) {
       return;
@@ -613,12 +720,22 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
                 {comments.length === 0 ? (
                   <p className="mt-3 text-sm text-ant-ink/70">No comments yet.</p>
                 ) : comments.length > VIRTUALIZE_AFTER_COUNT ? (
-                  <VirtualizedCommentList comments={comments} currentUserId={viewer.currentUserId} />
+                  <VirtualizedCommentList
+                    comments={comments}
+                    currentUserId={viewer.currentUserId}
+                    deletingCommentIds={deletingCommentIds}
+                    onDeleteComment={onDeleteComment}
+                  />
                 ) : (
                   <ol className="mt-4 space-y-3">
                     {comments.map((comment) => (
                       <li key={comment.id}>
-                        <CommentCard comment={comment} currentUserId={viewer.currentUserId} />
+                        <CommentCard
+                          comment={comment}
+                          currentUserId={viewer.currentUserId}
+                          isDeleting={deletingCommentIds.has(comment.id)}
+                          onDeleteComment={onDeleteComment}
+                        />
                       </li>
                     ))}
                   </ol>
