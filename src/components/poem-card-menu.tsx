@@ -4,6 +4,8 @@ import Link from "next/link";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { MoreHorizontal, PencilLine, Share2, Trash2 } from "lucide-react";
 
+import { FormRenderProgressBar } from "@/components/form-render-progress-bar";
+
 type DeletePoemAction = (formData: FormData) => Promise<void>;
 
 type PoemCardMenuProps = {
@@ -132,6 +134,7 @@ export function PoemCardMenu({
 
               {showDeleteAction ? (
                 <form action={deletePoemAction} onSubmit={onDeleteSubmit}>
+                  <FormRenderProgressBar />
                   <input type="hidden" name="poem_id" value={poemId} />
                   <button
                     type="submit"

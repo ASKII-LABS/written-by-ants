@@ -1,13 +1,22 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { SettingsSaveControls } from "@/components/settings-save-controls";
+import { SettingsThemeSelect } from "@/components/settings-theme-select";
+import { FooterFlashBanner } from "@/components/footer-flash-banner";
 import { createClient } from "@/lib/supabase/server";
+import {
+  DEFAULT_THEME,
+  isMissingThemeColumnError,
+  normalizeTheme,
+} from "@/lib/theme";
 
 export const dynamic = "force-dynamic";
 
 type SettingsPageProps = {
   searchParams: Promise<{
     error?: string;
+    saved?: string;
   }>;
 };
 
@@ -32,6 +41,7 @@ async function updateSettingsAction(formData: FormData) {
   const displayName = String(formData.get("display_name") ?? "").trim();
   const bioRaw = String(formData.get("bio") ?? "").trim();
   const publicProfile = formData.get("public_profile") === "on";
+  const selectedTheme = normalizeTheme(String(formData.get("theme") ?? ""));
 
   if (!displayName) {
     redirect("/settings?error=display_name_required");
@@ -46,14 +56,29 @@ async function updateSettingsAction(formData: FormData) {
     redirect("/login");
   }
 
-  const { error } = await supabase
+  const updateWithThemeResult = await supabase
     .from("profiles")
     .update({
       display_name: displayName,
       bio: bioRaw.length > 0 ? bioRaw : null,
       public_profile: publicProfile,
+      theme: selectedTheme,
     })
     .eq("id", user.id);
+
+  let error = updateWithThemeResult.error;
+  if (isMissingThemeColumnError(error)) {
+    const legacyUpdateResult = await supabase
+      .from("profiles")
+      .update({
+        display_name: displayName,
+        bio: bioRaw.length > 0 ? bioRaw : null,
+        public_profile: publicProfile,
+      })
+      .eq("id", user.id);
+
+    error = legacyUpdateResult.error;
+  }
 
   if (error) {
     redirect("/settings?error=save_failed");
@@ -64,7 +89,8 @@ async function updateSettingsAction(formData: FormData) {
   revalidatePath("/profile");
   revalidatePath(`/poet/${user.id}`);
   revalidatePath("/settings");
-  redirect("/profile");
+
+  redirect("/settings?saved=1");
 }
 
 export default async function SettingsPage({ searchParams }: SettingsPageProps) {
@@ -77,18 +103,39 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
     redirect("/login");
   }
 
-  const { data: profile } = await supabase
+  const profileWithThemeResult = await supabase
     .from("profiles")
-    .select("display_name, bio, public_profile")
+    .select("display_name, bio, public_profile, theme")
     .eq("id", user.id)
     .maybeSingle();
+
+  let profile = profileWithThemeResult.data;
+  if (isMissingThemeColumnError(profileWithThemeResult.error)) {
+    const legacyProfileResult = await supabase
+      .from("profiles")
+      .select("display_name, bio, public_profile")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (!legacyProfileResult.data) {
+      redirect("/onboarding");
+    }
+
+    profile = {
+      ...legacyProfileResult.data,
+      theme: DEFAULT_THEME,
+    };
+  } else if (profileWithThemeResult.error) {
+    redirect("/settings?error=save_failed");
+  }
 
   if (!profile) {
     redirect("/onboarding");
   }
 
-  const { error } = await searchParams;
+  const { error, saved } = await searchParams;
   const errorMessage = getErrorMessage(error);
+  const showSavedBanner = saved === "1";
 
   return (
     <section className="space-y-6">
@@ -124,7 +171,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               name="bio"
               rows={4}
               defaultValue={profile.bio ?? ""}
-              className="w-full rounded border border-ant-border bg-ant-paper px-3 py-2 outline-none transition focus:border-ant-primary"
+              className="w-full resize-none rounded border border-ant-border bg-ant-paper px-3 py-2 outline-none transition focus:border-ant-primary"
             />
           </div>
 
@@ -140,14 +187,22 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
             </label>
           </div>
 
-          <button
-            type="submit"
-            className="cursor-pointer rounded border border-ant-primary bg-ant-primary px-4 py-2 font-medium text-ant-paper transition hover:bg-ant-accent"
-          >
-            Save changes
-          </button>
+          <div className="space-y-2">
+            <label htmlFor="theme" className="block text-sm font-medium text-ant-ink">
+              Theme
+            </label>
+            <SettingsThemeSelect
+              id="theme"
+              name="theme"
+              defaultValue={normalizeTheme(profile.theme)}
+            />
+            <p className="text-xs text-ant-ink/70">Choose how the colony looks for you.</p>
+          </div>
+
+          <SettingsSaveControls />
         </form>
       </div>
+      {showSavedBanner ? <FooterFlashBanner message="Changes saved." clearSearchParam="saved" /> : null}
     </section>
   );
 }

@@ -1,7 +1,7 @@
 import sanitizeHtml from "sanitize-html";
 
 export function sanitizePoemHtml(contentHtml: string): string {
-  return sanitizeHtml(contentHtml, {
+  const sanitized = sanitizeHtml(contentHtml, {
     allowedTags: sanitizeHtml.defaults.allowedTags,
     allowedAttributes: {
       a: ["href", "target", "rel"],
@@ -18,4 +18,9 @@ export function sanitizePoemHtml(contentHtml: string): string {
       }),
     },
   });
+
+  return sanitized.replace(
+    /<p([^>]*)>\s*(?:<br\s*\/?>\s*)*<\/p>/gi,
+    "<p$1>&nbsp;</p>",
+  );
 }

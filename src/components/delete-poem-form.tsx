@@ -1,5 +1,7 @@
 "use client";
 
+import { FormRenderProgressBar } from "@/components/form-render-progress-bar";
+
 type DeletePoemFormProps = {
   poemId: string;
   deletePoemAction: (formData: FormData) => Promise<void>;
@@ -16,6 +18,7 @@ export function DeletePoemForm({ poemId, deletePoemAction, className }: DeletePo
         }
       }}
     >
+      <FormRenderProgressBar />
       <input type="hidden" name="poem_id" value={poemId} />
       <button type="submit" className={className}>
         Delete

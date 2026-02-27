@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { signOutAction } from "@/app/actions";
+import { FormRenderProgressBar } from "@/components/form-render-progress-bar";
 
 type HeaderUserMenuProps = {
   poetName: string;
@@ -79,6 +80,7 @@ export function HeaderUserMenu({ poetName }: HeaderUserMenuProps) {
             Settings
           </Link>
           <form action={signOutAction} className="border-t border-ant-border">
+            <FormRenderProgressBar />
             <LogoutButton />
           </form>
         </div>

@@ -6,6 +6,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import Underline from "@tiptap/extension-underline";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
+import { FormRenderProgressBar } from "@/components/form-render-progress-bar";
 import {
   DEFAULT_POEM_FONT,
   POEM_FONT_OPTIONS,
@@ -192,6 +193,7 @@ export function PoemEditor({ poem, savePoemAction, deletePoemAction }: PoemEdito
   return (
     <div className="space-y-5">
       <form action={savePoemAction} className="space-y-4 rounded border border-ant-border bg-ant-paper-2 p-4">
+        <FormRenderProgressBar />
         {poem?.id ? <input type="hidden" name="poem_id" value={poem.id} /> : null}
 
         <div className="space-y-2">
@@ -309,6 +311,7 @@ export function PoemEditor({ poem, savePoemAction, deletePoemAction }: PoemEdito
             }
           }}
         >
+          <FormRenderProgressBar />
           <input type="hidden" name="poem_id" value={poem.id} />
           <button
             type="submit"

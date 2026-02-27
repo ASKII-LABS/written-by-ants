@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { FormRenderProgressBar } from "@/components/form-render-progress-bar";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -100,6 +101,7 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
       {errorMessage ? <p className="mt-3 text-sm text-ant-primary">{errorMessage}</p> : null}
 
       <form action={saveOnboardingAction} className="mt-6 space-y-4">
+        <FormRenderProgressBar />
         <div className="space-y-2">
           <label htmlFor="display_name" className="text-sm font-medium text-ant-ink">
             Poet Name
