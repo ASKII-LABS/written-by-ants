@@ -3,6 +3,7 @@ import { Inter, Lora, Playfair_Display } from "next/font/google";
 
 import { CommentsDrawerProvider } from "@/components/comments-drawer-provider";
 import { Header } from "@/components/header";
+import { NavigationProgressBar } from "@/components/navigation-progress-bar";
 import { DEFAULT_THEME, type AppTheme, isMissingThemeColumnError, normalizeTheme } from "@/lib/theme";
 import { createClient } from "@/lib/supabase/server";
 
@@ -66,14 +67,15 @@ export default async function RootLayout({
   return (
     <html lang="en" data-theme={activeTheme}>
       <body
-        className={`${headingFont.variable} ${bodyFont.variable} ${playfairFont.variable} min-h-screen bg-ant-paper text-ant-ink`}
+        className={`${headingFont.variable} ${bodyFont.variable} ${playfairFont.variable} min-h-[100dvh] bg-ant-paper text-ant-ink`}
       >
-        <div className="flex min-h-screen flex-col bg-paper-grain">
+        <NavigationProgressBar />
+        <div className="flex min-h-[100dvh] flex-col bg-paper-grain">
           <Header />
           <CommentsDrawerProvider>
             <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-10">{children}</main>
           </CommentsDrawerProvider>
-          <footer className="border-t border-ant-border bg-ant-paper-2/80 px-4 py-4 backdrop-blur">
+          <footer className="border-t border-ant-border bg-ant-paper-2/80 px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] backdrop-blur">
             <div className="mx-auto w-full max-w-5xl text-center text-xs text-ant-ink/75">
               Copyright &copy; {currentYear} ASKII Labs. All rights reserved.
             </div>

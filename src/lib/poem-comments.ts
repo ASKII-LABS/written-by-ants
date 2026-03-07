@@ -28,6 +28,7 @@ export type DrawerComment = {
   authorName: string;
   content: string;
   createdAt: string;
+  parentCommentId: string | null;
   isPending?: boolean;
 };
 
@@ -80,10 +81,14 @@ export async function fetchPoemComments(url: string): Promise<PoemCommentsRespon
   }
 
   const payload = (await response.json()) as Partial<PoemCommentsResponse>;
+  const comments = (payload.comments ?? []).map((comment) => ({
+    ...comment,
+    parentCommentId: comment.parentCommentId ?? null,
+  }));
   return {
     poem: payload.poem ?? null,
     viewer: payload.viewer ?? DEFAULT_VIEWER,
-    comments: payload.comments ?? [],
+    comments,
     commentCount: payload.commentCount ?? 0,
     nextCursor: payload.nextCursor ?? null,
   };

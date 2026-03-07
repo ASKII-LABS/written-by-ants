@@ -25,11 +25,6 @@ export function SettingsThemeSelect({ id, name, defaultValue }: SettingsThemeSel
   const initialThemeRef = useRef<AppTheme>(initialTheme);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  const optionTextColor: Record<AppTheme, string> = {
-    classic: "#cf4f49",
-    plum: "#8f6eb4",
-  };
-
   useEffect(() => {
     function handleDocumentClick(event: MouseEvent) {
       if (!menuRef.current?.contains(event.target as Node)) {
@@ -73,7 +68,6 @@ export function SettingsThemeSelect({ id, name, defaultValue }: SettingsThemeSel
         aria-label="Theme"
         onClick={() => setIsOpen((current) => !current)}
         className="relative h-10 w-full cursor-pointer rounded border border-ant-border bg-ant-paper px-3 pr-9 text-left text-sm outline-none transition hover:border-ant-primary focus:border-ant-primary"
-        style={{ color: optionTextColor[value] }}
       >
         {THEME_LABELS[value]}
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-current opacity-70">
@@ -101,7 +95,6 @@ export function SettingsThemeSelect({ id, name, defaultValue }: SettingsThemeSel
               } ${
                 themeOption === value ? "bg-ant-paper-2" : ""
               }`}
-              style={{ color: optionTextColor[themeOption] }}
             >
               {THEME_LABELS[themeOption]}
             </button>

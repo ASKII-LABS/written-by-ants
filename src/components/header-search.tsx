@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 
+import { startNavigationProgress } from "@/components/navigation-progress-bar";
+
 function SearchIcon({ className }: { className?: string }) {
   return (
     <svg
@@ -92,6 +94,15 @@ export function HeaderSearch() {
     };
   }, [isMobileOpen]);
 
+  function onSearchSubmit() {
+    startNavigationProgress();
+  }
+
+  function onMobileSearchSubmit() {
+    startNavigationProgress();
+    setIsMobileOpen(false);
+  }
+
   const mobileSearchPanel = (
     <div
       ref={mobilePanelRef}
@@ -102,7 +113,7 @@ export function HeaderSearch() {
           : "pointer-events-none max-h-0 -translate-y-1 border-b-0 py-0 opacity-0"
       }`}
     >
-      <form action="/search" className="relative" onSubmit={() => setIsMobileOpen(false)}>
+      <form action="/search" className="relative" onSubmit={onMobileSearchSubmit}>
         <input
           type="search"
           name="q"
@@ -122,7 +133,7 @@ export function HeaderSearch() {
 
   return (
     <div ref={containerRef} className="sm:relative">
-      <form action="/search" className="relative hidden sm:block">
+      <form action="/search" className="relative hidden sm:block" onSubmit={onSearchSubmit}>
         <input
           type="search"
           name="q"

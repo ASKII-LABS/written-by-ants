@@ -202,11 +202,14 @@ export type AddedComment = {
   authorName: string;
   content: string;
   createdAt: string;
+  parentCommentId: string | null;
 };
 
 export async function addCommentAction(formData: FormData): Promise<AddedComment | null> {
   const poemId = String(formData.get("poem_id") ?? "").trim();
   const content = String(formData.get("content") ?? "").trim();
+  const parentCommentIdRaw = String(formData.get("parent_comment_id") ?? "").trim();
+  const parentCommentId = parentCommentIdRaw.length > 0 ? parentCommentIdRaw : null;
 
   if (!poemId || content.length === 0) {
     return null;
@@ -231,14 +234,28 @@ export async function addCommentAction(formData: FormData): Promise<AddedComment
     return null;
   }
 
+  if (parentCommentId) {
+    const { data: parentComment } = await supabase
+      .from("comments")
+      .select("id")
+      .eq("id", parentCommentId)
+      .eq("poem_id", poemId)
+      .maybeSingle();
+
+    if (!parentComment) {
+      return null;
+    }
+  }
+
   const { data: insertedComment, error: insertError } = await supabase
     .from("comments")
     .insert({
       poem_id: poemId,
       author_id: user.id,
       content,
+      parent_comment_id: parentCommentId,
     })
-    .select("id, poem_id, author_id, content, created_at")
+    .select("id, poem_id, author_id, content, created_at, parent_comment_id")
     .single();
 
   if (insertError) {
@@ -265,5 +282,6 @@ export async function addCommentAction(formData: FormData): Promise<AddedComment
     authorName,
     content: insertedComment.content,
     createdAt: insertedComment.created_at,
+    parentCommentId: insertedComment.parent_comment_id,
   };
 }

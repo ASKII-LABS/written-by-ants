@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { isMissingPoemFontColumnsError } from "@/lib/poem-fonts";
-import { sanitizePoemHtml } from "@/lib/sanitize";
 import { createClient } from "@/lib/supabase/server";
 
 type RouteContext = {
@@ -15,14 +13,12 @@ type CommentRecord = {
   author_id: string;
   content: string;
   created_at: string;
+  parent_comment_id: string | null;
 };
 
 type PoemRecord = {
   id: string;
   title: string;
-  content_html: string;
-  title_font: string | null;
-  content_font: string | null;
   author_id: string;
   is_published: boolean;
   created_at: string;
@@ -57,65 +53,32 @@ export async function GET(request: Request, { params }: RouteContext) {
   const cursor = url.searchParams.get("cursor")?.trim() ?? null;
   const pageLimit = parseLimit(url.searchParams.get("limit"));
   const queryLimit = pageLimit ? pageLimit + 1 : null;
+  const shouldFetchCount = !cursor;
 
   const poemResult = await supabase
     .from("poems")
-    .select("id, title, content_html, title_font, content_font, author_id, is_published, created_at")
+    .select("id, title, author_id, is_published, created_at")
     .eq("id", poemId)
     .maybeSingle();
 
-  let poem: PoemRecord | null = null;
-  if (isMissingPoemFontColumnsError(poemResult.error)) {
-    const legacyPoemResult = await supabase
-      .from("poems")
-      .select("id, title, content_html, author_id, is_published, created_at")
-      .eq("id", poemId)
-      .maybeSingle();
-
-    if (legacyPoemResult.error) {
-      return NextResponse.json(
-        {
-          poem: null,
-          comments: [],
-          commentCount: 0,
-          nextCursor: null,
-          viewer: {
-            isSignedIn: Boolean(user),
-            currentUserId: user?.id ?? null,
-            currentUserName: null,
-          },
+  if (poemResult.error) {
+    return NextResponse.json(
+      {
+        poem: null,
+        comments: [],
+        commentCount: 0,
+        nextCursor: null,
+        viewer: {
+          isSignedIn: Boolean(user),
+          currentUserId: user?.id ?? null,
+          currentUserName: null,
         },
-        { status: 500 },
-      );
-    }
-
-    poem = legacyPoemResult.data
-      ? ({
-          ...legacyPoemResult.data,
-          title_font: null,
-          content_font: null,
-        } as PoemRecord)
-      : null;
-  } else {
-    if (poemResult.error) {
-      return NextResponse.json(
-        {
-          poem: null,
-          comments: [],
-          commentCount: 0,
-          nextCursor: null,
-          viewer: {
-            isSignedIn: Boolean(user),
-            currentUserId: user?.id ?? null,
-            currentUserName: null,
-          },
-        },
-        { status: 500 },
-      );
-    }
-
-    poem = (poemResult.data as PoemRecord | null) ?? null;
+      },
+      { status: 500 },
+    );
   }
+
+  const poem = (poemResult.data as PoemRecord | null) ?? null;
 
   if (!poem) {
     return NextResponse.json(
@@ -151,46 +114,29 @@ export async function GET(request: Request, { params }: RouteContext) {
     );
   }
 
-  let commentsQuery = supabase
+  let rootCommentsQuery = supabase
     .from("comments")
-    .select("id, author_id, content, created_at")
+    .select("id, author_id, content, created_at, parent_comment_id")
     .eq("poem_id", poemId)
+    .is("parent_comment_id", null)
     .order("created_at", { ascending: sort === "asc" })
     .order("id", { ascending: sort === "asc" });
 
   if (cursor) {
-    commentsQuery =
+    rootCommentsQuery =
       sort === "desc"
-        ? commentsQuery.lt("created_at", cursor)
-        : commentsQuery.gt("created_at", cursor);
+        ? rootCommentsQuery.lt("created_at", cursor)
+        : rootCommentsQuery.gt("created_at", cursor);
   }
 
   if (queryLimit) {
-    commentsQuery = commentsQuery.limit(queryLimit);
+    rootCommentsQuery = rootCommentsQuery.limit(queryLimit);
   }
 
-  const commentsResultPromise = commentsQuery;
-  const commentCountResultPromise = supabase
-    .from("comments")
-    .select("id", { head: true, count: "exact" })
-    .eq("poem_id", poemId);
-  const likeCountResultPromise = supabase
-    .from("reactions")
-    .select("poem_id", { head: true, count: "exact" })
-    .eq("poem_id", poemId);
-  const likedByViewerResultPromise = user
-    ? supabase
-        .from("reactions")
-        .select("poem_id")
-        .eq("poem_id", poemId)
-        .eq("user_id", user.id)
-        .maybeSingle()
-    : Promise.resolve({ data: null, error: null });
-  const authorProfileResultPromise = supabase
-    .from("profiles")
-    .select("display_name")
-    .eq("id", poem.author_id)
-    .maybeSingle();
+  const rootCommentsResultPromise = rootCommentsQuery;
+  const commentCountResultPromise = shouldFetchCount
+    ? supabase.from("comments").select("id", { head: true, count: "exact" }).eq("poem_id", poemId)
+    : Promise.resolve({ count: null, error: null });
   const viewerProfileResultPromise = user
     ? supabase
         .from("profiles")
@@ -199,46 +145,97 @@ export async function GET(request: Request, { params }: RouteContext) {
         .maybeSingle()
     : Promise.resolve({ data: null, error: null });
 
-  const [
-    commentsResult,
-    commentCountResult,
-    likeCountResult,
-    likedByViewerResult,
-    authorProfileResult,
-    viewerProfileResult,
-  ] = await Promise.all([
-    commentsResultPromise,
+  const [rootCommentsResult, commentCountResult, viewerProfileResult] = await Promise.all([
+    rootCommentsResultPromise,
     commentCountResultPromise,
-    likeCountResultPromise,
-    likedByViewerResultPromise,
-    authorProfileResultPromise,
     viewerProfileResultPromise,
   ]);
 
-  const commentsTableMissing = commentsResult.error?.code === "42P01";
-  if (commentsResult.error && !commentsTableMissing) {
+  const commentsTableMissing = rootCommentsResult.error?.code === "42P01";
+  if (rootCommentsResult.error && !commentsTableMissing) {
     return NextResponse.json({ comments: [] }, { status: 500 });
   }
 
-  if (commentCountResult.error && commentCountResult.error.code !== "42P01") {
+  if (
+    shouldFetchCount &&
+    commentCountResult.error &&
+    "code" in commentCountResult.error &&
+    commentCountResult.error.code !== "42P01"
+  ) {
     return NextResponse.json({ comments: [] }, { status: 500 });
   }
 
-  if (likeCountResult.error && likeCountResult.error.code !== "42P01") {
-    return NextResponse.json({ comments: [] }, { status: 500 });
-  }
-
-  if (likedByViewerResult.error && likedByViewerResult.error.code !== "42P01") {
-    return NextResponse.json({ comments: [] }, { status: 500 });
-  }
-
-  const rawCommentRecords = commentsTableMissing
+  const rawRootCommentRecords = commentsTableMissing
     ? []
-    : ((commentsResult.data ?? []) as CommentRecord[]);
-  const hasMoreComments = Boolean(pageLimit && rawCommentRecords.length > pageLimit);
-  const commentRecords = hasMoreComments
-    ? rawCommentRecords.slice(0, pageLimit ?? rawCommentRecords.length)
-    : rawCommentRecords;
+    : ((rootCommentsResult.data ?? []) as CommentRecord[]);
+  const hasMoreComments = Boolean(pageLimit && rawRootCommentRecords.length > pageLimit);
+  const rootCommentRecords = hasMoreComments
+    ? rawRootCommentRecords.slice(0, pageLimit ?? rawRootCommentRecords.length)
+    : rawRootCommentRecords;
+  const rootCommentIds = rootCommentRecords.map((comment) => comment.id);
+
+  const descendantRecords: CommentRecord[] = [];
+  if (!commentsTableMissing && rootCommentIds.length > 0) {
+    const seenCommentIds = new Set<string>();
+    let parentIdsToLoad = rootCommentIds;
+
+    while (parentIdsToLoad.length > 0) {
+      const repliesResult = await supabase
+        .from("comments")
+        .select("id, author_id, content, created_at, parent_comment_id")
+        .eq("poem_id", poemId)
+        .in("parent_comment_id", parentIdsToLoad)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true });
+
+      if (repliesResult.error && repliesResult.error.code !== "42P01") {
+        return NextResponse.json({ comments: [] }, { status: 500 });
+      }
+
+      const currentLevelReplies = (repliesResult.data ?? []) as CommentRecord[];
+      if (currentLevelReplies.length === 0) {
+        break;
+      }
+
+      descendantRecords.push(...currentLevelReplies);
+      const nextParentIds: string[] = [];
+      currentLevelReplies.forEach((reply) => {
+        if (seenCommentIds.has(reply.id)) {
+          return;
+        }
+
+        seenCommentIds.add(reply.id);
+        nextParentIds.push(reply.id);
+      });
+
+      parentIdsToLoad = nextParentIds;
+    }
+  }
+
+  const repliesByParent = new Map<string, CommentRecord[]>();
+  descendantRecords.forEach((reply) => {
+    if (!reply.parent_comment_id) {
+      return;
+    }
+
+    const existingReplies = repliesByParent.get(reply.parent_comment_id) ?? [];
+    existingReplies.push(reply);
+    repliesByParent.set(reply.parent_comment_id, existingReplies);
+  });
+
+  const commentRecords: CommentRecord[] = [];
+  const visitedCommentIds = new Set<string>();
+  const appendThread = (comment: CommentRecord) => {
+    if (visitedCommentIds.has(comment.id)) {
+      return;
+    }
+
+    visitedCommentIds.add(comment.id);
+    commentRecords.push(comment);
+    (repliesByParent.get(comment.id) ?? []).forEach((reply) => appendThread(reply));
+  };
+
+  rootCommentRecords.forEach((rootComment) => appendThread(rootComment));
 
   const authorIds = Array.from(new Set(commentRecords.map((comment) => comment.author_id)));
   const authorNameById = new Map<string, string>();
@@ -264,33 +261,29 @@ export async function GET(request: Request, { params }: RouteContext) {
     authorName: authorNameById.get(comment.author_id) ?? "Poet",
     content: comment.content,
     createdAt: comment.created_at,
+    parentCommentId: comment.parent_comment_id,
   }));
 
-  const likeCount = likeCountResult.error ? 0 : Number(likeCountResult.count ?? 0);
-  const commentCount = commentCountResult.error ? 0 : Number(commentCountResult.count ?? 0);
+  const commentCount = shouldFetchCount ? Number(commentCountResult.count ?? 0) : 0;
   const nextCursor =
-    hasMoreComments && commentRecords.length > 0
-      ? commentRecords[commentRecords.length - 1]?.created_at
+    hasMoreComments && rootCommentRecords.length > 0
+      ? rootCommentRecords[rootCommentRecords.length - 1]?.created_at
       : null;
 
-  const authorName = authorProfileResult.data?.display_name ?? "Unknown Poet";
-  const viewerName =
-    viewerProfileResult.data?.display_name ??
-    user?.email?.split("@")[0] ??
-    (user?.id === poem.author_id ? authorName : null);
+  const viewerName = viewerProfileResult.data?.display_name ?? user?.email?.split("@")[0] ?? null;
 
   return NextResponse.json({
     poem: {
       id: poem.id,
       title: poem.title,
-      safeContentHtml: sanitizePoemHtml(poem.content_html),
-      titleFont: poem.title_font,
-      contentFont: poem.content_font,
+      safeContentHtml: "",
+      titleFont: null,
+      contentFont: null,
       authorId: poem.author_id,
-      authorName,
+      authorName: "Poet",
       createdAt: poem.created_at,
-      likeCount,
-      likedByViewer: Boolean(user && likedByViewerResult.data),
+      likeCount: 0,
+      likedByViewer: false,
     },
     viewer: {
       isSignedIn: Boolean(user),

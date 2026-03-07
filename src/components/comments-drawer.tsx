@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { ArrowUp, Trash2, X } from "lucide-react";
+import { ArrowUp, MoreHorizontal, Trash2, X } from "lucide-react";
 import useSWRInfinite from "swr/infinite";
 
 import { addCommentAction, deleteCommentAction, type AddedComment } from "@/app/actions";
@@ -23,6 +23,7 @@ import {
   fetchPoemComments,
   getPoemCommentsUrl,
 } from "@/lib/poem-comments";
+import { createClient as createBrowserClient } from "@/lib/supabase/browser";
 import { formatDate } from "@/lib/utils";
 
 const FOCUSABLE_SELECTOR =
@@ -35,6 +36,15 @@ type CommentsDrawerProps = {
   poemId: string | null;
   isOpen: boolean;
   onClose: () => void;
+};
+
+type RealtimeCommentRow = {
+  id?: string;
+  poem_id?: string;
+  author_id?: string;
+  content?: string;
+  created_at?: string;
+  parent_comment_id?: string | null;
 };
 
 function createTempCommentId() {
@@ -52,68 +62,437 @@ function toDrawerComment(comment: AddedComment): DrawerComment {
     authorName: comment.authorName,
     content: comment.content,
     createdAt: comment.createdAt,
+    parentCommentId: comment.parentCommentId,
+  };
+}
+
+function dedupeCommentsById(comments: DrawerComment[]) {
+  const seenCommentIds = new Set<string>();
+  return comments.filter((comment) => {
+    if (seenCommentIds.has(comment.id)) {
+      return false;
+    }
+
+    seenCommentIds.add(comment.id);
+    return true;
+  });
+}
+
+type ReplyTarget = {
+  id: string;
+  authorName: string;
+};
+
+function toReplyHandle(authorName: string) {
+  const compactName = authorName.replace(/\s+/g, "");
+  return `@${compactName}`;
+}
+
+type ThreadedCommentRow = {
+  comment: DrawerComment;
+  depth: number;
+};
+
+function buildThreadRows(comments: DrawerComment[]): ThreadedCommentRow[] {
+  const repliesByParent = new Map<string, DrawerComment[]>();
+  const commentIds = new Set(comments.map((comment) => comment.id));
+  const topLevelComments: DrawerComment[] = [];
+
+  comments.forEach((comment) => {
+    if (comment.parentCommentId && commentIds.has(comment.parentCommentId)) {
+      const existingReplies = repliesByParent.get(comment.parentCommentId) ?? [];
+      existingReplies.push(comment);
+      repliesByParent.set(comment.parentCommentId, existingReplies);
+      return;
+    }
+
+    topLevelComments.push(comment);
+  });
+
+  const rows: ThreadedCommentRow[] = [];
+  const visited = new Set<string>();
+
+  const appendComment = (comment: DrawerComment, depth: number) => {
+    if (visited.has(comment.id)) {
+      return;
+    }
+
+    visited.add(comment.id);
+    rows.push({ comment, depth });
+    (repliesByParent.get(comment.id) ?? []).forEach((reply) => appendComment(reply, depth + 1));
+  };
+
+  topLevelComments.forEach((comment) => appendComment(comment, 0));
+  comments.forEach((comment) => {
+    if (!visited.has(comment.id)) {
+      appendComment(comment, 0);
+    }
+  });
+
+  return rows;
+}
+
+function isCommentDescendantOf(
+  comment: DrawerComment,
+  parentCommentId: string,
+  commentsById: Map<string, DrawerComment>,
+) {
+  let currentParentId = comment.parentCommentId;
+  const visitedParentIds = new Set<string>();
+
+  while (currentParentId) {
+    if (currentParentId === parentCommentId) {
+      return true;
+    }
+
+    if (visitedParentIds.has(currentParentId)) {
+      return false;
+    }
+
+    visitedParentIds.add(currentParentId);
+    currentParentId = commentsById.get(currentParentId)?.parentCommentId ?? null;
+  }
+
+  return false;
+}
+
+function addCommentToPages(
+  existingPages: PoemCommentsResponse[] | undefined,
+  optimisticComment: DrawerComment,
+  parentCommentId: string | null,
+) {
+  if (!existingPages || existingPages.length === 0) {
+    return existingPages;
+  }
+
+  if (!parentCommentId) {
+    const [first, ...rest] = existingPages;
+    return [
+      {
+        ...first,
+        commentCount: first.commentCount + 1,
+        comments: [optimisticComment, ...first.comments],
+      },
+      ...rest,
+    ];
+  }
+
+  let inserted = false;
+  const nextPages = existingPages.map((page) => {
+    if (inserted) {
+      return page;
+    }
+
+    const parentIndex = page.comments.findIndex((comment) => comment.id === parentCommentId);
+    if (parentIndex === -1) {
+      return page;
+    }
+
+    const commentsById = new Map(page.comments.map((comment) => [comment.id, comment]));
+    let insertIndex = parentIndex + 1;
+    while (
+      insertIndex < page.comments.length &&
+      isCommentDescendantOf(page.comments[insertIndex], parentCommentId, commentsById)
+    ) {
+      insertIndex += 1;
+    }
+
+    inserted = true;
+    return {
+      ...page,
+      comments: [
+        ...page.comments.slice(0, insertIndex),
+        optimisticComment,
+        ...page.comments.slice(insertIndex),
+      ],
+    };
+  });
+
+  const [first, ...rest] = nextPages;
+  if (!first) {
+    return nextPages;
+  }
+
+  if (inserted) {
+    return [
+      {
+        ...first,
+        commentCount: first.commentCount + 1,
+      },
+      ...rest,
+    ];
+  }
+
+  return [
+    {
+      ...first,
+      commentCount: first.commentCount + 1,
+      comments: [optimisticComment, ...first.comments],
+    },
+    ...rest,
+  ];
+}
+
+function collectCommentAndDescendantIds(comments: DrawerComment[], rootCommentId: string) {
+  const childIdsByParent = new Map<string, string[]>();
+  comments.forEach((comment) => {
+    if (!comment.parentCommentId) {
+      return;
+    }
+
+    const existingChildren = childIdsByParent.get(comment.parentCommentId) ?? [];
+    existingChildren.push(comment.id);
+    childIdsByParent.set(comment.parentCommentId, existingChildren);
+  });
+
+  const idsToRemove = new Set<string>();
+  const queue = [rootCommentId];
+
+  while (queue.length > 0) {
+    const currentId = queue.shift();
+    if (!currentId || idsToRemove.has(currentId)) {
+      continue;
+    }
+
+    idsToRemove.add(currentId);
+    (childIdsByParent.get(currentId) ?? []).forEach((childId) => queue.push(childId));
+  }
+
+  return idsToRemove;
+}
+
+function removeCommentsFromPages(
+  existingPages: PoemCommentsResponse[] | undefined,
+  idsToRemove: Set<string>,
+) {
+  if (!existingPages || existingPages.length === 0 || idsToRemove.size === 0) {
+    return {
+      pages: existingPages,
+      removedCount: 0,
+    };
+  }
+
+  let removedCount = 0;
+  const nextPages = existingPages.map((page) => {
+    const nextComments = page.comments.filter((comment) => {
+      if (!idsToRemove.has(comment.id)) {
+        return true;
+      }
+
+      removedCount += 1;
+      return false;
+    });
+
+    return nextComments.length === page.comments.length
+      ? page
+      : {
+          ...page,
+          comments: nextComments,
+        };
+  });
+
+  if (removedCount === 0) {
+    return {
+      pages: existingPages,
+      removedCount: 0,
+    };
+  }
+
+  const [first, ...rest] = nextPages;
+  if (!first) {
+    return {
+      pages: nextPages,
+      removedCount,
+    };
+  }
+
+  return {
+    pages: [
+      {
+        ...first,
+        commentCount: Math.max(0, first.commentCount - removedCount),
+      },
+      ...rest,
+    ],
+    removedCount,
   };
 }
 
 type CommentCardProps = {
   comment: DrawerComment;
+  depth: number;
+  canReply: boolean;
+  isReplyingToComment: boolean;
+  commentById: Map<string, DrawerComment>;
   currentUserId: string | null;
   isDeleting: boolean;
+  onReplyComment: (comment: DrawerComment) => void;
+  onCancelReply: () => void;
   onDeleteComment: (commentId: string) => void;
 };
 
-function CommentCard({ comment, currentUserId, isDeleting, onDeleteComment }: CommentCardProps) {
+function CommentCard({
+  comment,
+  depth,
+  canReply,
+  isReplyingToComment,
+  commentById,
+  currentUserId,
+  isDeleting,
+  onReplyComment,
+  onCancelReply,
+  onDeleteComment,
+}: CommentCardProps) {
   const authorHref = currentUserId === comment.authorId ? "/profile" : `/poet/${comment.authorId}`;
+  const parentComment = comment.parentCommentId ? (commentById.get(comment.parentCommentId) ?? null) : null;
   const canDelete = currentUserId === comment.authorId && !comment.isPending;
+  const canReplyToComment = canReply && !comment.isPending;
+  const isReply = depth > 0;
+  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isActionsMenuOpen) {
+      return;
+    }
+
+    const onDocumentClick = (event: MouseEvent) => {
+      if (!actionsMenuRef.current?.contains(event.target as Node)) {
+        setIsActionsMenuOpen(false);
+      }
+    };
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsActionsMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", onDocumentClick);
+    document.addEventListener("keydown", onEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", onDocumentClick);
+      document.removeEventListener("keydown", onEscape);
+    };
+  }, [isActionsMenuOpen]);
+
+  const mentionPrefix = parentComment ? `${toReplyHandle(parentComment.authorName)} ` : null;
+  const hasMentionPrefix = Boolean(mentionPrefix && comment.content.startsWith(mentionPrefix));
+  const mentionHref =
+    parentComment && currentUserId === parentComment.authorId
+      ? "/profile"
+      : parentComment
+        ? `/poet/${parentComment.authorId}`
+        : null;
+  const mentionContent = mentionPrefix
+    ? comment.content.slice(mentionPrefix.length)
+    : comment.content;
 
   return (
     <article
       className={`rounded border border-ant-border bg-ant-paper p-3 ${
+        isReply ? "ml-6 border-l-2 border-l-ant-border/70" : ""
+      } ${
         comment.isPending ? "opacity-75" : ""
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className={canDelete ? "relative pr-7" : ""}>
         <p className="text-xs text-ant-ink/70">
           <Link href={authorHref} className="font-medium text-ant-ink transition hover:underline">
             {comment.authorName}
           </Link>{" "}
           <span>- {comment.isPending ? "Sending..." : formatDate(comment.createdAt)}</span>
-        </p>
-        {canDelete ? (
-          <button
-            type="button"
-            onClick={() => {
-              if (!confirm("Delete this comment? This action cannot be undone.")) {
-                return;
-              }
+          {canReplyToComment ? (
+            <>
+              <span className="mx-1">-</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isReplyingToComment) {
+                    onCancelReply();
+                    return;
+                  }
 
-              onDeleteComment(comment.id);
-            }}
-            disabled={isDeleting}
-            aria-label={isDeleting ? "Deleting comment" : "Delete comment"}
-            className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-ant-ink/70 transition hover:text-ant-primary disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
-            <span>{isDeleting ? "Deleting..." : "Delete"}</span>
-          </button>
+                  onReplyComment(comment);
+                }}
+                className="inline-flex items-center rounded text-xs text-ant-ink/70 transition hover:text-ant-primary"
+              >
+                {isReplyingToComment ? "Cancel reply" : "Reply"}
+              </button>
+            </>
+          ) : null}
+        </p>
+
+        {canDelete ? (
+          <div ref={actionsMenuRef} className="absolute right-0 top-0">
+            <button
+              type="button"
+              onClick={() => setIsActionsMenuOpen((current) => !current)}
+              aria-label="Open comment actions"
+              className="inline-flex h-5 w-5 items-center justify-center rounded-full text-ant-ink/70 transition hover:bg-ant-paper-2 hover:text-ant-primary"
+            >
+              <MoreHorizontal aria-hidden="true" className="h-3 w-3" />
+            </button>
+
+            {isActionsMenuOpen ? (
+              <div className="absolute right-0 top-6 z-20 min-w-24 overflow-hidden rounded border border-ant-border bg-ant-paper shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!confirm("Delete this comment? This action cannot be undone.")) {
+                      return;
+                    }
+
+                    setIsActionsMenuOpen(false);
+                    onDeleteComment(comment.id);
+                  }}
+                  disabled={isDeleting}
+                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-ant-primary transition hover:bg-ant-paper-2 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                  <span>{isDeleting ? "Deleting..." : "Delete"}</span>
+                </button>
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </div>
-      <p className="mt-1 whitespace-pre-wrap text-sm text-ant-ink/90">{comment.content}</p>
+      {hasMentionPrefix && mentionHref && mentionPrefix ? (
+        <p className="mt-1 whitespace-pre-wrap text-sm text-ant-ink/90">
+          <Link href={mentionHref} className="font-medium text-ant-primary transition hover:underline">
+            {mentionPrefix.trim()}
+          </Link>
+          {mentionContent ? <> {mentionContent}</> : null}
+        </p>
+      ) : (
+        <p className="mt-1 whitespace-pre-wrap text-sm text-ant-ink/90">{comment.content}</p>
+      )}
     </article>
   );
 }
 
 type VirtualizedCommentListProps = {
-  comments: DrawerComment[];
+  rows: ThreadedCommentRow[];
+  canReply: boolean;
+  replyingToCommentId: string | null;
+  commentById: Map<string, DrawerComment>;
   currentUserId: string | null;
   deletingCommentIds: Set<string>;
+  onReplyComment: (comment: DrawerComment) => void;
+  onCancelReply: () => void;
   onDeleteComment: (commentId: string) => void;
 };
 
 function VirtualizedCommentList({
-  comments,
+  rows,
+  canReply,
+  replyingToCommentId,
+  commentById,
   currentUserId,
   deletingCommentIds,
+  onReplyComment,
+  onCancelReply,
   onDeleteComment,
 }: VirtualizedCommentListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -141,14 +520,14 @@ function VirtualizedCommentList({
   }, []);
 
   const metrics = useMemo(() => {
-    return comments.reduce(
-      (accumulator, comment) => {
-        const height = measuredHeights[comment.id] ?? ESTIMATED_COMMENT_HEIGHT;
+    return rows.reduce(
+      (accumulator, row) => {
+        const height = measuredHeights[row.comment.id] ?? ESTIMATED_COMMENT_HEIGHT;
         return {
           rows: [
             ...accumulator.rows,
             {
-              comment,
+              row,
               top: accumulator.totalHeight,
               height,
             },
@@ -157,11 +536,11 @@ function VirtualizedCommentList({
         };
       },
       {
-        rows: [] as Array<{ comment: DrawerComment; top: number; height: number }>,
+        rows: [] as Array<{ row: ThreadedCommentRow; top: number; height: number }>,
         totalHeight: 0,
       },
     );
-  }, [comments, measuredHeights]);
+  }, [rows, measuredHeights]);
 
   const [startIndex, endIndex] = useMemo(() => {
     if (metrics.rows.length === 0) {
@@ -215,15 +594,21 @@ function VirtualizedCommentList({
       <ol className="relative" style={{ height: metrics.totalHeight }}>
         {visibleRows.map((row) => (
           <li
-            key={row.comment.id}
+            key={row.row.comment.id}
             className="absolute left-0 right-0"
             style={{ transform: `translateY(${row.top}px)` }}
           >
-            <div ref={(node) => setMeasuredHeight(row.comment.id, node)} className="pb-3">
+            <div ref={(node) => setMeasuredHeight(row.row.comment.id, node)} className="pb-3">
               <CommentCard
-                comment={row.comment}
+                comment={row.row.comment}
+                depth={row.row.depth}
+                canReply={canReply}
+                isReplyingToComment={replyingToCommentId === row.row.comment.id}
+                commentById={commentById}
                 currentUserId={currentUserId}
-                isDeleting={deletingCommentIds.has(row.comment.id)}
+                isDeleting={deletingCommentIds.has(row.row.comment.id)}
+                onReplyComment={onReplyComment}
+                onCancelReply={onCancelReply}
                 onDeleteComment={onDeleteComment}
               />
             </div>
@@ -252,15 +637,19 @@ function DrawerSkeleton() {
 
 export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps) {
   const drawerMode = useDrawerMode();
+  const supabase = useMemo(() => createBrowserClient(), []);
   const panelRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const touchStartYRef = useRef<number | null>(null);
+  const authorNameByIdRef = useRef<Map<string, string>>(new Map());
+  const loadingAuthorIdsRef = useRef<Set<string>>(new Set());
 
   const [dragOffsetY, setDragOffsetY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [draft, setDraft] = useState("");
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingCommentIds, setDeletingCommentIds] = useState<Set<string>>(new Set());
@@ -303,6 +692,7 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
     }
 
     setDraft("");
+    setReplyTarget(null);
     setSubmitError(null);
     setDeletingCommentIds(new Set());
     setDragOffsetY(0);
@@ -323,6 +713,9 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
     currentUserName: null,
   };
   const comments = useMemo(() => pages.flatMap((page) => page.comments), [pages]);
+  const commentById = useMemo(() => new Map(comments.map((comment) => [comment.id, comment])), [comments]);
+  const threadedCommentRows = useMemo(() => buildThreadRows(comments), [comments]);
+  const replyingToCommentId = replyTarget?.id ?? null;
   const commentCount = pages[0]?.commentCount ?? comments.length;
   const nextCursor = pages.length > 0 ? pages[pages.length - 1]?.nextCursor : null;
   const hasMoreComments = Boolean(nextCursor);
@@ -330,6 +723,17 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
   const isMobile = drawerMode === "mobile";
   const isLoadingInitial = isOpen && !hasCurrentPoemData && (isLoading || isValidating);
   const isLoadingMore = isValidating && pages.length > 0 && size > pages.length;
+
+  useEffect(() => {
+    const authorNameById = authorNameByIdRef.current;
+    comments.forEach((comment) => {
+      authorNameById.set(comment.authorId, comment.authorName);
+    });
+
+    if (viewer.currentUserId && viewer.currentUserName) {
+      authorNameById.set(viewer.currentUserId, viewer.currentUserName);
+    }
+  }, [comments, viewer.currentUserId, viewer.currentUserName]);
 
   const syncComposerHeight = useCallback((element: HTMLTextAreaElement | null) => {
     if (!element) {
@@ -422,6 +826,291 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
     inputRef.current?.focus();
   }, [isOpen, poemId, viewer.isSignedIn]);
 
+  useEffect(() => {
+    if (!replyTarget) {
+      return;
+    }
+
+    const replyTargetExists = comments.some((comment) => comment.id === replyTarget.id);
+    if (!replyTargetExists) {
+      setReplyTarget(null);
+    }
+  }, [comments, replyTarget]);
+
+  useEffect(() => {
+    if (!isOpen || !poemId) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    async function resolveAuthorName(authorId: string) {
+      const cachedAuthorName = authorNameByIdRef.current.get(authorId);
+      if (cachedAuthorName) {
+        return cachedAuthorName;
+      }
+
+      if (loadingAuthorIdsRef.current.has(authorId)) {
+        return "Poet";
+      }
+
+      loadingAuthorIdsRef.current.add(authorId);
+      try {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("display_name")
+          .eq("id", authorId)
+          .maybeSingle();
+
+        const authorName = profile?.display_name ?? "Poet";
+        authorNameByIdRef.current.set(authorId, authorName);
+        return authorName;
+      } finally {
+        loadingAuthorIdsRef.current.delete(authorId);
+      }
+    }
+
+    async function handleInsert(row: RealtimeCommentRow) {
+      if (isCancelled || !row.id || !row.author_id || !row.content || !row.created_at) {
+        return;
+      }
+
+      const authorName = await resolveAuthorName(row.author_id);
+      if (isCancelled) {
+        return;
+      }
+
+      const incomingComment: DrawerComment = {
+        id: row.id,
+        authorId: row.author_id,
+        authorName,
+        content: row.content,
+        createdAt: row.created_at,
+        parentCommentId: row.parent_comment_id ?? null,
+      };
+
+      await mutate(
+        (existingPages) => {
+          if (!existingPages || existingPages.length === 0) {
+            return existingPages;
+          }
+
+          const alreadyExists = existingPages.some((page) =>
+            page.comments.some((comment) => comment.id === incomingComment.id),
+          );
+          if (alreadyExists) {
+            return existingPages.map((page) => ({
+              ...page,
+              comments: page.comments.map((comment) =>
+                comment.id === incomingComment.id
+                  ? {
+                      ...comment,
+                      ...incomingComment,
+                      isPending: false,
+                    }
+                  : comment,
+              ),
+            }));
+          }
+
+          const parentIsLoaded =
+            !incomingComment.parentCommentId ||
+            existingPages.some((page) =>
+              page.comments.some((comment) => comment.id === incomingComment.parentCommentId),
+            );
+
+          if (parentIsLoaded) {
+            return addCommentToPages(existingPages, incomingComment, incomingComment.parentCommentId);
+          }
+
+          const [first, ...rest] = existingPages;
+          if (!first) {
+            return existingPages;
+          }
+
+          return [
+            {
+              ...first,
+              commentCount: first.commentCount + 1,
+            },
+            ...rest,
+          ];
+        },
+        { revalidate: false },
+      );
+    }
+
+    async function handleUpdate(row: RealtimeCommentRow) {
+      if (isCancelled || !row.id) {
+        return;
+      }
+
+      const authorName = row.author_id ? await resolveAuthorName(row.author_id) : null;
+      if (isCancelled) {
+        return;
+      }
+
+      await mutate(
+        (existingPages) => {
+          if (!existingPages || existingPages.length === 0) {
+            return existingPages;
+          }
+
+          let updated = false;
+          const nextPages = existingPages.map((page) => ({
+            ...page,
+            comments: page.comments.map((comment) => {
+              if (comment.id !== row.id) {
+                return comment;
+              }
+
+              updated = true;
+              return {
+                ...comment,
+                authorId: row.author_id ?? comment.authorId,
+                authorName: authorName ?? comment.authorName,
+                content: row.content ?? comment.content,
+                createdAt: row.created_at ?? comment.createdAt,
+                parentCommentId: row.parent_comment_id ?? comment.parentCommentId,
+                isPending: false,
+              };
+            }),
+          }));
+
+          return updated ? nextPages : existingPages;
+        },
+        { revalidate: false },
+      );
+    }
+
+    async function handleDelete(row: RealtimeCommentRow) {
+      if (isCancelled || !row.id) {
+        return;
+      }
+
+      let removedVisibleComments = 0;
+      await mutate(
+        (existingPages) => {
+          const { pages, removedCount } = removeCommentsFromPages(existingPages, new Set([row.id ?? ""]));
+          removedVisibleComments = removedCount;
+
+          if (!pages || pages.length === 0 || removedCount > 0) {
+            return pages;
+          }
+
+          const [first, ...rest] = pages;
+          if (!first) {
+            return pages;
+          }
+
+          return [
+            {
+              ...first,
+              commentCount: Math.max(0, first.commentCount - 1),
+            },
+            ...rest,
+          ];
+        },
+        { revalidate: false },
+      );
+
+      setReplyTarget((current) => (current?.id === row.id ? null : current));
+
+      if (removedVisibleComments === 0) {
+        void mutate();
+      }
+    }
+
+    const channel = supabase
+      .channel(`comments-realtime:${poemId}:${Date.now().toString(36)}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "comments",
+          filter: `poem_id=eq.${poemId}`,
+        },
+        (payload) => {
+          void handleInsert(payload.new as RealtimeCommentRow);
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "comments",
+          filter: `poem_id=eq.${poemId}`,
+        },
+        (payload) => {
+          void handleUpdate(payload.new as RealtimeCommentRow);
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "comments",
+          filter: `poem_id=eq.${poemId}`,
+        },
+        (payload) => {
+          void handleDelete(payload.old as RealtimeCommentRow);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      isCancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [isOpen, mutate, poemId, supabase]);
+
+  function onReplyComment(comment: DrawerComment) {
+    const replyPrefix = `${toReplyHandle(comment.authorName)} `;
+    const previousReplyPrefix = replyTarget
+      ? `${toReplyHandle(replyTarget.authorName)} `
+      : null;
+    setReplyTarget({
+      id: comment.id,
+      authorName: comment.authorName,
+    });
+    setDraft((currentDraft) => {
+      const baseDraft =
+        previousReplyPrefix && currentDraft.startsWith(previousReplyPrefix)
+          ? currentDraft.slice(previousReplyPrefix.length)
+          : currentDraft;
+      const trimmedDraft = baseDraft.trim();
+      if (trimmedDraft.length === 0) {
+        return replyPrefix;
+      }
+
+      if (trimmedDraft.startsWith(replyPrefix)) {
+        return baseDraft;
+      }
+
+      return `${replyPrefix}${trimmedDraft}`;
+    });
+    inputRef.current?.focus();
+  }
+
+  function onCancelReply() {
+    if (replyTarget) {
+      const replyPrefix = `${toReplyHandle(replyTarget.authorName)} `;
+      setDraft((currentDraft) => {
+        if (!currentDraft.startsWith(replyPrefix)) {
+          return currentDraft;
+        }
+
+        return currentDraft.slice(replyPrefix.length);
+      });
+    }
+
+    setReplyTarget(null);
+    inputRef.current?.focus();
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -434,6 +1123,7 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
       return;
     }
 
+    const parentCommentId = replyTarget?.id ?? null;
     const tempId = createTempCommentId();
     const optimisticComment: DrawerComment = {
       id: tempId,
@@ -441,28 +1131,18 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
       authorName: viewer.currentUserName ?? "You",
       content: trimmedDraft,
       createdAt: new Date().toISOString(),
+      parentCommentId,
       isPending: true,
     };
 
     setDraft("");
+    setReplyTarget(null);
     setSubmitError(null);
     setIsSubmitting(true);
 
-    await mutate(
+    void mutate(
       (existingPages) => {
-        if (!existingPages || existingPages.length === 0) {
-          return existingPages;
-        }
-
-        const [first, ...rest] = existingPages;
-        return [
-          {
-            ...first,
-            commentCount: first.commentCount + 1,
-            comments: [optimisticComment, ...first.comments],
-          },
-          ...rest,
-        ];
+        return addCommentToPages(existingPages, optimisticComment, parentCommentId);
       },
       { revalidate: false },
     );
@@ -470,6 +1150,9 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
     const formData = new FormData();
     formData.set("poem_id", poemId);
     formData.set("content", trimmedDraft);
+    if (parentCommentId) {
+      formData.set("parent_comment_id", parentCommentId);
+    }
 
     try {
       const savedComment = await addCommentAction(formData);
@@ -483,16 +1166,14 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
             return existingPages;
           }
 
-          const [first, ...rest] = existingPages;
-          return [
-            {
-              ...first,
-              comments: first.comments.map((comment) =>
+          return existingPages.map((page) => ({
+            ...page,
+            comments: dedupeCommentsById(
+              page.comments.map((comment) =>
                 comment.id === tempId ? toDrawerComment(savedComment) : comment,
               ),
-            },
-            ...rest,
-          ];
+            ),
+          }));
         },
         { revalidate: false },
       );
@@ -501,19 +1182,8 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
     } catch {
       await mutate(
         (existingPages) => {
-          if (!existingPages || existingPages.length === 0) {
-            return existingPages;
-          }
-
-          const [first, ...rest] = existingPages;
-          return [
-            {
-              ...first,
-              commentCount: Math.max(0, first.commentCount - 1),
-              comments: first.comments.filter((comment) => comment.id !== tempId),
-            },
-            ...rest,
-          ];
+          const { pages } = removeCommentsFromPages(existingPages, new Set([tempId]));
+          return pages;
         },
         { revalidate: false },
       );
@@ -532,6 +1202,7 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
     }
 
     const previousPages = data;
+    let idsRemovedOptimistically = new Set<string>([commentId]);
     setSubmitError(null);
     setDeletingCommentIds((current) => new Set(current).add(commentId));
 
@@ -541,32 +1212,17 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
           return existingPages;
         }
 
-        const nextPages = existingPages.map((page) => {
-          const nextComments = page.comments.filter((comment) => comment.id !== commentId);
-          return nextComments.length === page.comments.length
-            ? page
-            : {
-                ...page,
-                comments: nextComments,
-              };
-        });
-
-        const removedComment = nextPages.some((page, index) => page !== existingPages[index]);
-        if (!removedComment) {
-          return existingPages;
-        }
-
-        const [first, ...rest] = nextPages;
-        return [
-          {
-            ...first,
-            commentCount: Math.max(0, first.commentCount - 1),
-          },
-          ...rest,
-        ];
+        const allComments = existingPages.flatMap((page) => page.comments);
+        idsRemovedOptimistically = collectCommentAndDescendantIds(allComments, commentId);
+        const { pages } = removeCommentsFromPages(existingPages, idsRemovedOptimistically);
+        return pages;
       },
       { revalidate: false },
     );
+
+    if (replyTarget && idsRemovedOptimistically.has(replyTarget.id)) {
+      setReplyTarget(null);
+    }
 
     const formData = new FormData();
     formData.set("poem_id", poemId);
@@ -624,9 +1280,8 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
     }
 
     const deltaY = (event.touches[0]?.clientY ?? 0) - touchStartYRef.current;
-    if (deltaY > 0) {
-      setDragOffsetY(Math.min(deltaY, 280));
-    }
+    const clampedDeltaY = Math.max(-120, Math.min(deltaY, 280));
+    setDragOffsetY(clampedDeltaY);
   }
 
   function onTouchEnd() {
@@ -648,8 +1303,8 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
   }
 
   const panelClassName = isMobile
-    ? `absolute inset-x-0 bottom-0 flex max-h-[92vh] flex-col rounded-t-2xl bg-ant-paper-2 shadow-2xl transition-transform ${
-        isDragging ? "duration-0" : "duration-200"
+    ? `absolute inset-x-0 bottom-0 flex max-h-[92dvh] touch-pan-y flex-col rounded-t-2xl bg-ant-paper-2 shadow-2xl transition-transform will-change-transform ${
+        isDragging ? "duration-0" : "duration-300 ease-out"
       }`
     : "absolute right-0 top-0 flex h-full w-full max-w-2xl flex-col bg-ant-paper-2 shadow-2xl";
 
@@ -659,7 +1314,7 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
         type="button"
         aria-label="Close comments drawer"
         onClick={onClose}
-        className="absolute inset-0 bg-ant-ink/45"
+        className="absolute inset-0 bg-black/55"
       />
 
       <section
@@ -676,7 +1331,7 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
-            className="flex justify-center pb-1 pt-2"
+            className="flex touch-none justify-center pb-1 pt-2"
           >
             <span className="h-1.5 w-12 rounded-full bg-ant-border" />
           </div>
@@ -703,7 +1358,7 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
           ) : null}
         </header>
 
-        <div className="flex-1 overflow-y-auto px-4 pb-6 pt-3">
+        <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-3">
           {isLoadingInitial ? <DrawerSkeleton /> : null}
 
           {!isLoadingInitial && error && !poem ? (
@@ -717,23 +1372,34 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
               <section>
                 <p className="text-sm text-ant-ink/70">{commentCount} comments</p>
 
-                {comments.length === 0 ? (
+                {threadedCommentRows.length === 0 ? (
                   <p className="mt-3 text-sm text-ant-ink/70">No comments yet.</p>
-                ) : comments.length > VIRTUALIZE_AFTER_COUNT ? (
+                ) : threadedCommentRows.length > VIRTUALIZE_AFTER_COUNT ? (
                   <VirtualizedCommentList
-                    comments={comments}
+                    rows={threadedCommentRows}
+                    canReply={viewer.isSignedIn}
+                    replyingToCommentId={replyingToCommentId}
+                    commentById={commentById}
                     currentUserId={viewer.currentUserId}
                     deletingCommentIds={deletingCommentIds}
+                    onReplyComment={onReplyComment}
+                    onCancelReply={onCancelReply}
                     onDeleteComment={onDeleteComment}
                   />
                 ) : (
                   <ol className="mt-4 space-y-3">
-                    {comments.map((comment) => (
-                      <li key={comment.id}>
+                    {threadedCommentRows.map((row) => (
+                      <li key={row.comment.id}>
                         <CommentCard
-                          comment={comment}
+                          comment={row.comment}
+                          depth={row.depth}
+                          canReply={viewer.isSignedIn}
+                          isReplyingToComment={replyingToCommentId === row.comment.id}
+                          commentById={commentById}
                           currentUserId={viewer.currentUserId}
-                          isDeleting={deletingCommentIds.has(comment.id)}
+                          isDeleting={deletingCommentIds.has(row.comment.id)}
+                          onReplyComment={onReplyComment}
+                          onCancelReply={onCancelReply}
                           onDeleteComment={onDeleteComment}
                         />
                       </li>
@@ -753,60 +1419,56 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
                 ) : null}
 
                 {viewer.isSignedIn ? (
-                 <form onSubmit={onSubmit} className="mt-5">
-  <label htmlFor="drawer-comment-content" className="sr-only">
-    Add a comment
-  </label>
+                  <form onSubmit={onSubmit} className="mt-5">
+                    <label htmlFor="drawer-comment-content" className="sr-only">
+                      Add a comment
+                    </label>
 
-  <div className="grid">
-    <textarea
-      id="drawer-comment-content"
-      ref={inputRef}
-      value={draft}
-      onChange={(event) => setDraft(event.target.value)}
-      onKeyDown={onComposerKeyDown}
-      rows={1}
-      placeholder="Leave a comment..."
-      className="
-        col-start-1 row-start-1
-        w-full resize-none
-        min-h-[52px]
-        leading-6
-        overflow-hidden
-        rounded border border-ant-border
-        bg-ant-paper
-        px-4 py-3 pr-14
-        text-[0.95rem] text-ant-ink
-        outline-none transition
-        focus:border-ant-primary
-      "
-    />
+                    <div className="grid">
+                      <textarea
+                        id="drawer-comment-content"
+                        ref={inputRef}
+                        value={draft}
+                        onChange={(event) => setDraft(event.target.value)}
+                        onKeyDown={onComposerKeyDown}
+                        rows={1}
+                        placeholder="Leave a comment..."
+                        className="
+                          col-start-1 row-start-1
+                          w-full resize-none
+                          min-h-[52px]
+                          leading-6
+                          overflow-hidden
+                          rounded border border-ant-border
+                          bg-ant-paper
+                          px-4 py-3 pr-14
+                          text-[0.95rem] text-ant-ink
+                          outline-none transition
+                          focus:border-ant-primary
+                        "
+                      />
 
-    <div className="col-start-1 row-start-1 flex items-center justify-end pr-2 pointer-events-none">
-      <button
-        type="submit"
-        disabled={draft.trim().length === 0 || isSubmitting}
-        aria-label={isSubmitting ? "Posting comment" : "Post comment"}
-        className="
-          pointer-events-auto
-          inline-flex h-8 w-8 items-center justify-center
-          rounded border border-ant-primary
-          bg-ant-primary text-ant-paper
-          transition hover:bg-ant-accent
-          disabled:cursor-not-allowed disabled:opacity-60
-        "
-      >
-        <ArrowUp aria-hidden="true" className="h-4 w-4" />
-      </button>
-    </div>
-  </div>
+                      <div className="pointer-events-none col-start-1 row-start-1 flex items-center justify-end pr-2">
+                        <button
+                          type="submit"
+                          disabled={draft.trim().length === 0 || isSubmitting}
+                          aria-label={isSubmitting ? "Posting comment" : "Post comment"}
+                          className="
+                            pointer-events-auto
+                            inline-flex h-8 w-8 items-center justify-center
+                            rounded border border-ant-primary
+                            bg-ant-primary text-ant-paper
+                            transition hover:bg-ant-accent
+                            disabled:cursor-not-allowed disabled:opacity-60
+                          "
+                        >
+                          <ArrowUp aria-hidden="true" className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
 
-  {submitError ? (
-    <p className="mt-2 text-xs text-ant-primary">
-      {submitError}
-    </p>
-  ) : null}
-</form>
+                    {submitError ? <p className="mt-2 text-xs text-ant-primary">{submitError}</p> : null}
+                  </form>
                 ) : (
                   <p className="mt-5 text-sm text-ant-ink/70">
                     <Link href="/login" className="text-ant-primary transition hover:underline">

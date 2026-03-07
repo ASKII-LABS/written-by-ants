@@ -60,6 +60,11 @@
 html {
   scrollbar-color: var(--ant-scrollbar-thumb) var(--ant-scrollbar-track);
   scrollbar-width: thin;
+  overscroll-behavior-y: none;
+}
+
+body {
+  overscroll-behavior-y: none;
 }
 
 *::-webkit-scrollbar {
