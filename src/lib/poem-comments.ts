@@ -5,15 +5,6 @@ export const MOBILE_PREFETCH_COMMENT_PAGE_SIZE = 12;
 
 export type DrawerPoem = {
   id: string;
-  title: string;
-  safeContentHtml: string;
-  titleFont: string | null;
-  contentFont: string | null;
-  authorId: string;
-  authorName: string;
-  createdAt: string;
-  likeCount: number;
-  likedByViewer: boolean;
 };
 
 export type DrawerViewer = {
@@ -44,6 +35,7 @@ type PoemCommentsQuery = {
   limit?: number;
   cursor?: string | null;
   sort?: "asc" | "desc";
+  compact?: boolean;
 };
 
 const DEFAULT_VIEWER: DrawerViewer = {
@@ -67,10 +59,61 @@ export function getPoemCommentsUrl(poemId: string, query: PoemCommentsQuery = {}
     params.set("sort", query.sort);
   }
 
+  if (query.compact !== false) {
+    params.set("compact", "1");
+  }
+
   const suffix = params.toString();
   return suffix.length > 0
     ? `/api/poems/${poemId}/comments?${suffix}`
     : `/api/poems/${poemId}/comments`;
+}
+
+type CompactComment = {
+  i: string;
+  u: string;
+  n: string;
+  t: string;
+  d: string;
+  p?: string | null;
+};
+
+type CompactViewer = {
+  s: boolean;
+  i: string | null;
+  n: string | null;
+};
+
+type CompactPoemCommentsResponse = {
+  p?: { i: string } | null;
+  v?: CompactViewer;
+  c?: CompactComment[];
+  cc?: number;
+  nc?: string | null;
+};
+
+function parseCompactPayload(payload: CompactPoemCommentsResponse): PoemCommentsResponse {
+  const compactComments = payload.c ?? [];
+  return {
+    poem: payload.p ? { id: payload.p.i } : null,
+    viewer: payload.v
+      ? {
+          isSignedIn: Boolean(payload.v.s),
+          currentUserId: payload.v.i ?? null,
+          currentUserName: payload.v.n ?? null,
+        }
+      : DEFAULT_VIEWER,
+    comments: compactComments.map((comment) => ({
+      id: comment.i,
+      authorId: comment.u,
+      authorName: comment.n,
+      content: comment.t,
+      createdAt: comment.d,
+      parentCommentId: comment.p ?? null,
+    })),
+    commentCount: payload.cc ?? 0,
+    nextCursor: payload.nc ?? null,
+  };
 }
 
 export async function fetchPoemComments(url: string): Promise<PoemCommentsResponse> {
@@ -80,17 +123,24 @@ export async function fetchPoemComments(url: string): Promise<PoemCommentsRespon
     throw new Error("Failed to load comments.");
   }
 
-  const payload = (await response.json()) as Partial<PoemCommentsResponse>;
-  const comments = (payload.comments ?? []).map((comment) => ({
+  const payload = (await response.json()) as
+    | Partial<PoemCommentsResponse>
+    | CompactPoemCommentsResponse;
+  if ("c" in payload || "v" in payload || "cc" in payload || "nc" in payload || "p" in payload) {
+    return parseCompactPayload(payload as CompactPoemCommentsResponse);
+  }
+
+  const standardPayload = payload as Partial<PoemCommentsResponse>;
+  const comments = (standardPayload.comments ?? []).map((comment: DrawerComment) => ({
     ...comment,
     parentCommentId: comment.parentCommentId ?? null,
   }));
   return {
-    poem: payload.poem ?? null,
-    viewer: payload.viewer ?? DEFAULT_VIEWER,
+    poem: standardPayload.poem ?? null,
+    viewer: standardPayload.viewer ?? DEFAULT_VIEWER,
     comments,
-    commentCount: payload.commentCount ?? 0,
-    nextCursor: payload.nextCursor ?? null,
+    commentCount: standardPayload.commentCount ?? 0,
+    nextCursor: standardPayload.nextCursor ?? null,
   };
 }
 
@@ -99,11 +149,13 @@ export function prefetchPoemComments(
   options: {
     limit?: number;
     sort?: "asc" | "desc";
+    compact?: boolean;
   } = {},
 ) {
   const url = getPoemCommentsUrl(poemId, {
     limit: options.limit ?? COMMENT_PAGE_SIZE,
     sort: options.sort ?? "desc",
+    compact: options.compact ?? true,
   });
 
   void preload(url, fetchPoemComments);

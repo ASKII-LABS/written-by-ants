@@ -57,6 +57,8 @@ Set these locally and in Vercel:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `REDIS_REST_URL` (optional, for comments cache)
+- `REDIS_REST_TOKEN` (optional, for comments cache)
 
 ## Deploying to Vercel
 

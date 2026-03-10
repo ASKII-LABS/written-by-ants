@@ -479,9 +479,12 @@ type VirtualizedCommentListProps = {
   commentById: Map<string, DrawerComment>;
   currentUserId: string | null;
   deletingCommentIds: Set<string>;
+  hasMoreComments: boolean;
+  isLoadingMore: boolean;
   onReplyComment: (comment: DrawerComment) => void;
   onCancelReply: () => void;
   onDeleteComment: (commentId: string) => void;
+  onLoadMoreComments: () => void;
 };
 
 function VirtualizedCommentList({
@@ -491,9 +494,12 @@ function VirtualizedCommentList({
   commentById,
   currentUserId,
   deletingCommentIds,
+  hasMoreComments,
+  isLoadingMore,
   onReplyComment,
   onCancelReply,
   onDeleteComment,
+  onLoadMoreComments,
 }: VirtualizedCommentListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [measuredHeights, setMeasuredHeights] = useState<Record<string, number>>({});
@@ -588,7 +594,17 @@ function VirtualizedCommentList({
   return (
     <div
       ref={containerRef}
-      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      onScroll={(event) => {
+        const container = event.currentTarget;
+        const nextScrollTop = container.scrollTop;
+        setScrollTop(nextScrollTop);
+
+        const isNearBottom =
+          nextScrollTop + container.clientHeight >= container.scrollHeight - 140;
+        if (isNearBottom && hasMoreComments && !isLoadingMore) {
+          onLoadMoreComments();
+        }
+      }}
       className="mt-4 max-h-[48vh] overflow-y-auto rounded border border-ant-border bg-ant-paper/40 p-2"
     >
       <ol className="relative" style={{ height: metrics.totalHeight }}>
@@ -640,6 +656,9 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
   const supabase = useMemo(() => createBrowserClient(), []);
   const panelRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const commentsScrollRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const pendingPageLoadRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const touchStartYRef = useRef<number | null>(null);
@@ -697,6 +716,7 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
     setDeletingCommentIds(new Set());
     setDragOffsetY(0);
     setIsDragging(false);
+    pendingPageLoadRef.current = false;
     void setSize(1);
   }, [isOpen, poemId, setSize]);
 
@@ -719,10 +739,58 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
   const commentCount = pages[0]?.commentCount ?? comments.length;
   const nextCursor = pages.length > 0 ? pages[pages.length - 1]?.nextCursor : null;
   const hasMoreComments = Boolean(nextCursor);
+  const shouldUseVirtualizedList = threadedCommentRows.length > VIRTUALIZE_AFTER_COUNT;
 
   const isMobile = drawerMode === "mobile";
   const isLoadingInitial = isOpen && !hasCurrentPoemData && (isLoading || isValidating);
   const isLoadingMore = isValidating && pages.length > 0 && size > pages.length;
+
+  const loadMoreComments = useCallback(() => {
+    if (!hasMoreComments || isLoadingMore || pendingPageLoadRef.current) {
+      return;
+    }
+
+    pendingPageLoadRef.current = true;
+    void setSize((currentSize) => currentSize + 1);
+  }, [hasMoreComments, isLoadingMore, setSize]);
+
+  useEffect(() => {
+    if (!isLoadingMore) {
+      pendingPageLoadRef.current = false;
+    }
+  }, [isLoadingMore]);
+
+  useEffect(() => {
+    if (!isOpen || shouldUseVirtualizedList || !hasMoreComments || isLoadingMore) {
+      return;
+    }
+
+    const root = commentsScrollRef.current;
+    const target = loadMoreSentinelRef.current;
+    if (!root || !target || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            loadMoreComments();
+          }
+        });
+      },
+      {
+        root,
+        rootMargin: "0px 0px 220px 0px",
+        threshold: 0.1,
+      },
+    );
+
+    observer.observe(target);
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMoreComments, isLoadingMore, isOpen, loadMoreComments, shouldUseVirtualizedList]);
 
   useEffect(() => {
     const authorNameById = authorNameByIdRef.current;
@@ -1358,7 +1426,10 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
           ) : null}
         </header>
 
-        <div className="flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-3">
+        <div
+          ref={commentsScrollRef}
+          className="flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-3"
+        >
           {isLoadingInitial ? <DrawerSkeleton /> : null}
 
           {!isLoadingInitial && error && !poem ? (
@@ -1374,7 +1445,7 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
 
                 {threadedCommentRows.length === 0 ? (
                   <p className="mt-3 text-sm text-ant-ink/70">No comments yet.</p>
-                ) : threadedCommentRows.length > VIRTUALIZE_AFTER_COUNT ? (
+                ) : shouldUseVirtualizedList ? (
                   <VirtualizedCommentList
                     rows={threadedCommentRows}
                     canReply={viewer.isSignedIn}
@@ -1382,9 +1453,12 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
                     commentById={commentById}
                     currentUserId={viewer.currentUserId}
                     deletingCommentIds={deletingCommentIds}
+                    hasMoreComments={hasMoreComments}
+                    isLoadingMore={isLoadingMore}
                     onReplyComment={onReplyComment}
                     onCancelReply={onCancelReply}
                     onDeleteComment={onDeleteComment}
+                    onLoadMoreComments={loadMoreComments}
                   />
                 ) : (
                   <ol className="mt-4 space-y-3">
@@ -1407,15 +1481,11 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
                   </ol>
                 )}
 
-                {hasMoreComments ? (
-                  <button
-                    type="button"
-                    onClick={() => void setSize(size + 1)}
-                    disabled={isLoadingMore}
-                    className="mt-4 rounded border border-ant-border px-3 py-1.5 text-sm text-ant-ink transition hover:border-ant-primary hover:text-ant-primary disabled:cursor-not-allowed disabled:opacity-65"
-                  >
-                    {isLoadingMore ? "Loading..." : "Load older comments"}
-                  </button>
+                {!shouldUseVirtualizedList && hasMoreComments ? (
+                  <div ref={loadMoreSentinelRef} aria-hidden="true" className="mt-4 h-1 w-full" />
+                ) : null}
+                {isLoadingMore ? (
+                  <p className="mt-4 text-xs text-ant-ink/60">Loading older comments...</p>
                 ) : null}
 
                 {viewer.isSignedIn ? (

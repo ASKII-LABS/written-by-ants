@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { invalidatePoemCommentsCache } from "@/lib/comment-cache";
 import { createClient } from "@/lib/supabase/server";
 
 export async function signOutAction() {
@@ -40,6 +41,7 @@ export async function deletePoemAction(formData: FormData) {
   revalidatePath("/search");
   revalidatePath(`/poet/${user.id}`);
   revalidatePath(`/write`);
+  await invalidatePoemCommentsCache(poemId);
 }
 
 export async function toggleLikeAction(formData: FormData) {
@@ -191,6 +193,7 @@ export async function deleteCommentAction(formData: FormData): Promise<boolean> 
   if (poem?.author_id) {
     revalidatePath(`/poet/${poem.author_id}`);
   }
+  await invalidatePoemCommentsCache(poemId);
 
   return true;
 }
@@ -274,6 +277,7 @@ export async function addCommentAction(formData: FormData): Promise<AddedComment
   revalidatePath("/profile");
   revalidatePath("/search");
   revalidatePath(`/poet/${poem.author_id}`);
+  await invalidatePoemCommentsCache(poemId);
 
   return {
     id: insertedComment.id,
