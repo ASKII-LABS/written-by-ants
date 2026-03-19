@@ -3,7 +3,6 @@
 import { useState } from "react";
 
 import { CommentsTriggerButton } from "@/components/comments-trigger-button";
-import { MobileCommentsPrefetch } from "@/components/mobile-comments-prefetch";
 import { PoemCardMenu } from "@/components/poem-card-menu";
 import { PoemLikeControl } from "@/components/poem-like-control";
 import { getPoemFontFamily } from "@/lib/poem-fonts";
@@ -77,7 +76,6 @@ export function ProfilePoemTabs({
               id={`poem-${poem.id}`}
               className="relative rounded border border-ant-border bg-ant-paper p-5"
             >
-              <MobileCommentsPrefetch poemId={poem.id} />
               <PoemCardMenu
                 poemId={poem.id}
                 poemTitle={poem.title}

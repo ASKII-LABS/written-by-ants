@@ -23,6 +23,8 @@ type CachedPoemCommentsPage = {
     content: string;
     createdAt: string;
     parentCommentId: string | null;
+    likeCount: number;
+    likedByViewer: boolean;
   }>;
   commentCount: number;
   nextCursor: string | null;
@@ -101,7 +103,7 @@ export function getPoemCommentsCacheKey({
   sort: "asc" | "desc";
   limit: number;
 }) {
-  return `comments-cache:v1:${poemId}:sort:${sort}:limit:${limit}`;
+  return `comments-cache:v4:${poemId}:sort:${sort}:limit:${limit}`;
 }
 
 export async function getCachedPoemCommentsPage(cacheKey: string) {

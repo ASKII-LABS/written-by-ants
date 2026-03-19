@@ -289,3 +289,105 @@ export async function addCommentAction(formData: FormData): Promise<AddedComment
     parentCommentId: insertedComment.parent_comment_id,
   };
 }
+
+export type ToggledCommentLike = {
+  commentId: string;
+  likedByViewer: boolean;
+  likeCount: number;
+};
+
+export async function toggleCommentLikeAction(formData: FormData): Promise<ToggledCommentLike | null> {
+  const commentId = String(formData.get("comment_id") ?? "").trim();
+  const poemId = String(formData.get("poem_id") ?? "").trim();
+
+  if (!commentId || !poemId) {
+    return null;
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const { data: comment, error: commentError } = await supabase
+    .from("comments")
+    .select("id")
+    .eq("id", commentId)
+    .eq("poem_id", poemId)
+    .maybeSingle();
+
+  if (commentError) {
+    throw commentError;
+  }
+
+  if (!comment) {
+    return null;
+  }
+
+  const { data: existingReaction, error: existingReactionError } = await supabase
+    .from("comment_reactions")
+    .select("comment_id")
+    .eq("comment_id", commentId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (existingReactionError && existingReactionError.code !== "42P01") {
+    throw existingReactionError;
+  }
+  if (existingReactionError?.code === "42P01") {
+    return null;
+  }
+
+  let likedByViewer = false;
+  if (existingReaction) {
+    const { error: deleteReactionError } = await supabase
+      .from("comment_reactions")
+      .delete()
+      .eq("comment_id", commentId)
+      .eq("user_id", user.id);
+
+    if (deleteReactionError?.code === "42P01") {
+      return null;
+    }
+    if (deleteReactionError) {
+      throw deleteReactionError;
+    }
+  } else {
+    const { error: insertReactionError } = await supabase
+      .from("comment_reactions")
+      .insert({
+        comment_id: commentId,
+        user_id: user.id,
+      });
+
+    if (insertReactionError && insertReactionError.code !== "23505") {
+      if (insertReactionError.code === "42P01") {
+        return null;
+      }
+      throw insertReactionError;
+    }
+
+    likedByViewer = true;
+  }
+
+  const { count: likeCount, error: likeCountError } = await supabase
+    .from("comment_reactions")
+    .select("comment_id", { head: true, count: "exact" })
+    .eq("comment_id", commentId);
+
+  if (likeCountError && likeCountError.code !== "42P01") {
+    throw likeCountError;
+  }
+
+  await invalidatePoemCommentsCache(poemId);
+
+  return {
+    commentId,
+    likedByViewer,
+    likeCount: Number(likeCount ?? 0),
+  };
+}

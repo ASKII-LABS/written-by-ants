@@ -4,7 +4,6 @@ import { Heart } from "lucide-react";
 
 import { deletePoemAction } from "@/app/actions";
 import { CommentsTriggerButton } from "@/components/comments-trigger-button";
-import { MobileCommentsPrefetch } from "@/components/mobile-comments-prefetch";
 import { PoemCardMenu } from "@/components/poem-card-menu";
 import { PoemLikeControl } from "@/components/poem-like-control";
 import { getPoemFontFamily, isMissingPoemFontColumnsError } from "@/lib/poem-fonts";
@@ -172,7 +171,6 @@ export default async function PoetPage({ params }: PoetPageProps) {
                   id={`poem-${poem.id}`}
                   className="relative rounded border border-ant-border bg-ant-paper p-5"
                 >
-                  <MobileCommentsPrefetch poemId={poem.id} />
                   <PoemCardMenu
                     poemId={poem.id}
                     poemTitle={poem.title}

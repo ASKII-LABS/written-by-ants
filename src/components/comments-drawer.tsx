@@ -11,10 +11,15 @@ import {
   useRef,
   useState,
 } from "react";
-import { ArrowUp, MoreHorizontal, Trash2, X } from "lucide-react";
+import { ArrowUp, Heart, MoreHorizontal, Trash2, X } from "lucide-react";
 import useSWRInfinite from "swr/infinite";
 
-import { addCommentAction, deleteCommentAction, type AddedComment } from "@/app/actions";
+import {
+  addCommentAction,
+  deleteCommentAction,
+  toggleCommentLikeAction,
+  type AddedComment,
+} from "@/app/actions";
 import { useDrawerMode } from "@/hooks/use-drawer-mode";
 import {
   COMMENT_PAGE_SIZE,
@@ -63,6 +68,8 @@ function toDrawerComment(comment: AddedComment): DrawerComment {
     content: comment.content,
     createdAt: comment.createdAt,
     parentCommentId: comment.parentCommentId,
+    likeCount: 0,
+    likedByViewer: false,
   };
 }
 
@@ -261,6 +268,44 @@ function collectCommentAndDescendantIds(comments: DrawerComment[], rootCommentId
   return idsToRemove;
 }
 
+function updateCommentLikeStateInPages(
+  existingPages: PoemCommentsResponse[] | undefined,
+  {
+    commentId,
+    likedByViewer,
+    likeCount,
+  }: {
+    commentId: string;
+    likedByViewer?: boolean;
+    likeCount?: number;
+  },
+) {
+  if (!existingPages || existingPages.length === 0) {
+    return existingPages;
+  }
+
+  let updated = false;
+  const nextPages = existingPages.map((page) => ({
+    ...page,
+    comments: page.comments.map((comment) => {
+      if (comment.id !== commentId) {
+        return comment;
+      }
+
+      updated = true;
+      return {
+        ...comment,
+        likedByViewer:
+          typeof likedByViewer === "boolean" ? likedByViewer : comment.likedByViewer,
+        likeCount:
+          typeof likeCount === "number" ? Math.max(0, likeCount) : comment.likeCount,
+      };
+    }),
+  }));
+
+  return updated ? nextPages : existingPages;
+}
+
 function removeCommentsFromPages(
   existingPages: PoemCommentsResponse[] | undefined,
   idsToRemove: Set<string>,
@@ -322,31 +367,40 @@ type CommentCardProps = {
   comment: DrawerComment;
   depth: number;
   canReply: boolean;
+  canLike: boolean;
   isReplyingToComment: boolean;
   commentById: Map<string, DrawerComment>;
   currentUserId: string | null;
   isDeleting: boolean;
+  isLiking: boolean;
   onReplyComment: (comment: DrawerComment) => void;
   onCancelReply: () => void;
   onDeleteComment: (commentId: string) => void;
+  onToggleCommentLike: (commentId: string) => void;
+  onNavigateToProfile: () => void;
 };
 
 function CommentCard({
   comment,
   depth,
   canReply,
+  canLike,
   isReplyingToComment,
   commentById,
   currentUserId,
   isDeleting,
+  isLiking,
   onReplyComment,
   onCancelReply,
   onDeleteComment,
+  onToggleCommentLike,
+  onNavigateToProfile,
 }: CommentCardProps) {
   const authorHref = currentUserId === comment.authorId ? "/profile" : `/poet/${comment.authorId}`;
   const parentComment = comment.parentCommentId ? (commentById.get(comment.parentCommentId) ?? null) : null;
   const canDelete = currentUserId === comment.authorId && !comment.isPending;
   const canReplyToComment = canReply && !comment.isPending;
+  const canLikeComment = canLike && !comment.isPending;
   const isReply = depth > 0;
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
   const actionsMenuRef = useRef<HTMLDivElement | null>(null);
@@ -399,7 +453,11 @@ function CommentCard({
     >
       <div className={canDelete ? "relative pr-7" : ""}>
         <p className="text-xs text-ant-ink/70">
-          <Link href={authorHref} className="font-medium text-ant-ink transition hover:underline">
+          <Link
+            href={authorHref}
+            onClick={onNavigateToProfile}
+            className="font-medium text-ant-ink transition hover:underline"
+          >
             {comment.authorName}
           </Link>{" "}
           <span>- {comment.isPending ? "Sending..." : formatDate(comment.createdAt)}</span>
@@ -460,7 +518,11 @@ function CommentCard({
       </div>
       {hasMentionPrefix && mentionHref && mentionPrefix ? (
         <p className="mt-1 whitespace-pre-wrap text-sm text-ant-ink/90">
-          <Link href={mentionHref} className="font-medium text-ant-primary transition hover:underline">
+          <Link
+            href={mentionHref}
+            onClick={onNavigateToProfile}
+            className="font-medium text-ant-primary transition hover:underline"
+          >
             {mentionPrefix.trim()}
           </Link>
           {mentionContent ? <> {mentionContent}</> : null}
@@ -468,6 +530,30 @@ function CommentCard({
       ) : (
         <p className="mt-1 whitespace-pre-wrap text-sm text-ant-ink/90">{comment.content}</p>
       )}
+      <div className="mt-2 flex items-center gap-2 text-xs text-ant-ink/70">
+        {canLikeComment ? (
+          <button
+            type="button"
+            onClick={() => onToggleCommentLike(comment.id)}
+            disabled={isLiking}
+            className="inline-flex items-center gap-1 rounded text-xs transition hover:text-ant-primary disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Heart
+              aria-hidden="true"
+              className={`h-3.5 w-3.5 ${
+                comment.likedByViewer ? "fill-current text-ant-primary" : ""
+              }`}
+            />
+            <span>{comment.likedByViewer ? "Liked" : "Like"}</span>
+          </button>
+        ) : (
+          <span className="inline-flex items-center gap-1">
+            <Heart aria-hidden="true" className="h-3.5 w-3.5" />
+            <span>Like</span>
+          </span>
+        )}
+        <span className="tabular-nums">{comment.likeCount}</span>
+      </div>
     </article>
   );
 }
@@ -475,30 +561,38 @@ function CommentCard({
 type VirtualizedCommentListProps = {
   rows: ThreadedCommentRow[];
   canReply: boolean;
+  canLike: boolean;
   replyingToCommentId: string | null;
   commentById: Map<string, DrawerComment>;
   currentUserId: string | null;
   deletingCommentIds: Set<string>;
+  likingCommentIds: Set<string>;
   hasMoreComments: boolean;
   isLoadingMore: boolean;
   onReplyComment: (comment: DrawerComment) => void;
   onCancelReply: () => void;
   onDeleteComment: (commentId: string) => void;
+  onToggleCommentLike: (commentId: string) => void;
+  onNavigateToProfile: () => void;
   onLoadMoreComments: () => void;
 };
 
 function VirtualizedCommentList({
   rows,
   canReply,
+  canLike,
   replyingToCommentId,
   commentById,
   currentUserId,
   deletingCommentIds,
+  likingCommentIds,
   hasMoreComments,
   isLoadingMore,
   onReplyComment,
   onCancelReply,
   onDeleteComment,
+  onToggleCommentLike,
+  onNavigateToProfile,
   onLoadMoreComments,
 }: VirtualizedCommentListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -619,13 +713,17 @@ function VirtualizedCommentList({
                 comment={row.row.comment}
                 depth={row.row.depth}
                 canReply={canReply}
+                canLike={canLike}
                 isReplyingToComment={replyingToCommentId === row.row.comment.id}
                 commentById={commentById}
                 currentUserId={currentUserId}
                 isDeleting={deletingCommentIds.has(row.row.comment.id)}
+                isLiking={likingCommentIds.has(row.row.comment.id)}
                 onReplyComment={onReplyComment}
                 onCancelReply={onCancelReply}
                 onDeleteComment={onDeleteComment}
+                onToggleCommentLike={onToggleCommentLike}
+                onNavigateToProfile={onNavigateToProfile}
               />
             </div>
           </li>
@@ -672,6 +770,7 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingCommentIds, setDeletingCommentIds] = useState<Set<string>>(new Set());
+  const [likingCommentIds, setLikingCommentIds] = useState<Set<string>>(new Set());
 
   const { data, error, isLoading, isValidating, mutate, setSize, size } =
     useSWRInfinite<PoemCommentsResponse>(
@@ -699,9 +798,12 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
       },
       fetchPoemComments,
       {
-        keepPreviousData: true,
-        dedupingInterval: 60_000,
-        revalidateFirstPage: false,
+          keepPreviousData: true,
+          dedupingInterval: 60_000,
+          revalidateFirstPage: false,
+          revalidateOnFocus: false,
+          revalidateOnReconnect: false,
+          revalidateIfStale: false,
       },
     );
 
@@ -714,6 +816,7 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
     setReplyTarget(null);
     setSubmitError(null);
     setDeletingCommentIds(new Set());
+    setLikingCommentIds(new Set());
     setDragOffsetY(0);
     setIsDragging(false);
     pendingPageLoadRef.current = false;
@@ -753,6 +856,10 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
     pendingPageLoadRef.current = true;
     void setSize((currentSize) => currentSize + 1);
   }, [hasMoreComments, isLoadingMore, setSize]);
+
+  const onNavigateToProfile = useCallback(() => {
+    onClose();
+  }, [onClose]);
 
   useEffect(() => {
     if (!isLoadingMore) {
@@ -955,6 +1062,8 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
         content: row.content,
         createdAt: row.created_at,
         parentCommentId: row.parent_comment_id ?? null,
+        likeCount: 0,
+        likedByViewer: false,
       };
 
       await mutate(
@@ -1200,6 +1309,8 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
       content: trimmedDraft,
       createdAt: new Date().toISOString(),
       parentCommentId,
+      likeCount: 0,
+      likedByViewer: false,
       isPending: true,
     };
 
@@ -1313,6 +1424,69 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
       setSubmitError("Could not delete your comment. Try again.");
     } finally {
       setDeletingCommentIds((current) => {
+        const next = new Set(current);
+        next.delete(commentId);
+        return next;
+      });
+    }
+  }
+
+  async function onToggleCommentLike(commentId: string) {
+    if (!poemId || !viewer.isSignedIn || likingCommentIds.has(commentId)) {
+      return;
+    }
+
+    const targetComment = commentById.get(commentId);
+    if (!targetComment || targetComment.isPending) {
+      return;
+    }
+
+    const previousPages = data;
+    const optimisticLikedByViewer = !targetComment.likedByViewer;
+    const optimisticLikeCount = targetComment.likeCount + (optimisticLikedByViewer ? 1 : -1);
+
+    setSubmitError(null);
+    setLikingCommentIds((current) => new Set(current).add(commentId));
+
+    await mutate(
+      (existingPages) =>
+        updateCommentLikeStateInPages(existingPages, {
+          commentId,
+          likedByViewer: optimisticLikedByViewer,
+          likeCount: optimisticLikeCount,
+        }),
+      { revalidate: false },
+    );
+
+    const formData = new FormData();
+    formData.set("poem_id", poemId);
+    formData.set("comment_id", commentId);
+
+    try {
+      const toggledLike = await toggleCommentLikeAction(formData);
+      if (!toggledLike) {
+        throw new Error("Comment like was not updated.");
+      }
+
+      await mutate(
+        (existingPages) =>
+          updateCommentLikeStateInPages(existingPages, {
+            commentId: toggledLike.commentId,
+            likedByViewer: toggledLike.likedByViewer,
+            likeCount: toggledLike.likeCount,
+          }),
+        { revalidate: false },
+      );
+    } catch {
+      if (previousPages) {
+        await mutate(previousPages, { revalidate: false });
+      } else {
+        void mutate();
+      }
+
+      setSubmitError("Could not update comment like. Try again.");
+    } finally {
+      setLikingCommentIds((current) => {
         const next = new Set(current);
         next.delete(commentId);
         return next;
@@ -1449,15 +1623,19 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
                   <VirtualizedCommentList
                     rows={threadedCommentRows}
                     canReply={viewer.isSignedIn}
+                    canLike={viewer.isSignedIn}
                     replyingToCommentId={replyingToCommentId}
                     commentById={commentById}
                     currentUserId={viewer.currentUserId}
                     deletingCommentIds={deletingCommentIds}
+                    likingCommentIds={likingCommentIds}
                     hasMoreComments={hasMoreComments}
                     isLoadingMore={isLoadingMore}
                     onReplyComment={onReplyComment}
                     onCancelReply={onCancelReply}
                     onDeleteComment={onDeleteComment}
+                    onToggleCommentLike={onToggleCommentLike}
+                    onNavigateToProfile={onNavigateToProfile}
                     onLoadMoreComments={loadMoreComments}
                   />
                 ) : (
@@ -1468,13 +1646,17 @@ export function CommentsDrawer({ poemId, isOpen, onClose }: CommentsDrawerProps)
                           comment={row.comment}
                           depth={row.depth}
                           canReply={viewer.isSignedIn}
+                          canLike={viewer.isSignedIn}
                           isReplyingToComment={replyingToCommentId === row.comment.id}
                           commentById={commentById}
                           currentUserId={viewer.currentUserId}
                           isDeleting={deletingCommentIds.has(row.comment.id)}
+                          isLiking={likingCommentIds.has(row.comment.id)}
                           onReplyComment={onReplyComment}
                           onCancelReply={onCancelReply}
                           onDeleteComment={onDeleteComment}
+                          onToggleCommentLike={onToggleCommentLike}
+                          onNavigateToProfile={onNavigateToProfile}
                         />
                       </li>
                     ))}
